@@ -98,8 +98,10 @@ class ExcelImageDataset(Dataset):
 
 # Example usage with multiple root directories
 root_dirs = [
-    '/root/stanfordData123/stanfordData123/images1234',
-    '/root/stanfordData123/stanfordData123/images'
+    '/root/stanfordData4321/stanfordData4321/images1',
+    '/root/stanfordData123/stanfordData123/images2',
+    '/root/stanfordData123/stanfordData123/images3',
+    '/root/stanfordData123/stanfordData123/images4'
 ]
 data = ExcelImageDataset(excel_file=excel_file_path, root_dirs=root_dirs, transform=transform)
 
