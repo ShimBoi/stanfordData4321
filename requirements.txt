@@ -1,0 +1,9 @@
+torch==2.0.1+cu117
+torchvision
+torchaudio
+transformers
+captum
+Pillow
+pandas
+matplotlib
+opencv-python
