@@ -123,6 +123,7 @@ optimizer = optim.SGD(net.parameters(), lr=0.1, momentum=0.9)
 # Training loop
 for epoch in range(3):  # Loop over the dataset multiple times
     running_loss = 0.0
+    print(epoch)
     for i, data in enumerate(train_loader, 0):
         # Get the inputs and move them to GPU
         inputs, labels = data
@@ -182,10 +183,11 @@ class GradCAM:
         target_layer.register_forward_hook(forward_hook)
 
     def get_heatmap(self, class_idx):
-        one_hot = torch.zeros((1, self.model.fc.out_features), dtype=torch.float32)
+        one_hot = torch.zeros((1, self.model.fc.out_features), dtype=torch.float32).to(device)
         one_hot[0][class_idx] = 1
         self.model.zero_grad()
-        output = self.forward_relu_outputs.backward(gradient=one_hot, retain_graph=True)
+        output = self.model.fc(self.forward_relu_outputs)
+        output.backward(gradient=one_hot, retain_graph=True)
         grads = self.gradients[0]
         activations = self.forward_relu_outputs[0]
         pooled_grads = torch.mean(grads, dim=[0, 2, 3])
