@@ -9,8 +9,6 @@ from PIL import Image
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-import torchvision
-from transformers import GPT2Tokenizer, GPT2Model
 import cv2
 
 # Print the current working directory
@@ -186,10 +184,12 @@ class GradCAM:
         one_hot = torch.zeros((1, self.model.fc.out_features), dtype=torch.float32).to(device)
         one_hot[0][class_idx] = 1
         self.model.zero_grad()
-        # Forward pass to get the convolutional outputs and apply gradients
+        
+        # Run a forward pass and get the output
         forward_output = self.forward_relu_outputs
         forward_output_flatten = forward_output.view(forward_output.size(0), -1)
         output = self.model.fc(forward_output_flatten)
+        
         output.backward(gradient=one_hot, retain_graph=True)
         grads = self.gradients[0]
         activations = self.forward_relu_outputs[0]
@@ -211,15 +211,16 @@ output = net(sample_img)
 predicted = torch.max(output.data, 1)[1]
 heatmap = grad_cam.get_heatmap(predicted[0].item())
 
-# Display the heatmap
+# Display heatmap
 plt.matshow(heatmap)
 plt.show()
 
-# Overlay the heatmap on the image
-img = sample_img.squeeze(0).cpu().numpy().transpose(1, 2, 0)
+# Overlay heatmap on the original image
+img = sample_img.squeeze().cpu().numpy().transpose((1, 2, 0))
 heatmap = cv2.resize(heatmap, (img.shape[1], img.shape[0]))
 heatmap = np.uint8(255 * heatmap)
 heatmap = cv2.applyColorMap(heatmap, cv2.COLORMAP_JET)
 superimposed_img = heatmap * 0.4 + img
+superimposed_img = superimposed_img / np.max(superimposed_img)
 plt.imshow(superimposed_img)
 plt.show()
