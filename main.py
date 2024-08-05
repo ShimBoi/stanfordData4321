@@ -186,9 +186,10 @@ class GradCAM:
         one_hot = torch.zeros((1, self.model.fc.out_features), dtype=torch.float32).to(device)
         one_hot[0][class_idx] = 1
         self.model.zero_grad()
-        # Reshape the forward outputs to match the fully connected layer input
-        forward_output = self.forward_relu_outputs.view(self.forward_relu_outputs.size(0), -1)
-        output = self.model.fc(forward_output)
+        # Forward pass to get the convolutional outputs and apply gradients
+        forward_output = self.forward_relu_outputs
+        forward_output_flatten = forward_output.view(forward_output.size(0), -1)
+        output = self.model.fc(forward_output_flatten)
         output.backward(gradient=one_hot, retain_graph=True)
         grads = self.gradients[0]
         activations = self.forward_relu_outputs[0]
