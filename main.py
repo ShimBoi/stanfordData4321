@@ -9,15 +9,15 @@ from PIL import Image
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-import torchvision
-from transformers import GPT2Tokenizer, GPT2Model
+from pytorch_grad_cam import GradCAM
+from pytorch_grad_cam.utils.image import show_cam_on_image
 import cv2
 
 # Print the current working directory
 print("Current working directory:", os.getcwd())
 
 # Load the Excel file
-excel_file_path = '/content/drive/MyDrive/midasmultimodalimagedatasetforaibasedskincancer/release_midas.xlsx'
+excel_file_path = './dataRef/release_midas.xlsx'
 if not os.path.exists(excel_file_path):
     raise FileNotFoundError(f"{excel_file_path} does not exist. Please check the path.")
 
@@ -91,10 +91,10 @@ class ExcelImageDataset(Dataset):
 
 # Define the root directories
 root_dirs = [
-    '/content/drive/MyDrive/midasmultimodalimagedatasetforaibasedskincancer/images2',
-    '/content/drive/MyDrive/midasmultimodalimagedatasetforaibasedskincancer/images1',
-    '/content/drive/MyDrive/midasmultimodalimagedatasetforaibasedskincancer/images3',
-    '/content/drive/MyDrive/midasmultimodalimagedatasetforaibasedskincancer/images4'
+    '/root/stanfordData4321/stanfordData4321/images2',
+    '/root/stanfordData4321/stanfordData4321/images1',
+    '/root/stanfordData4321/stanfordData4321/images3',
+    '/root/stanfordData4321/stanfordData4321/images4'
 ]
 
 # Create dataset and data loader
@@ -164,22 +164,19 @@ with torch.no_grad():
 
 print(f"Accuracy of the network: {100 * correct / total:.2f} %")
 
-# Grad-CAM class
-from pytorch_grad_cam import GradCAM
-from pytorch_grad_cam.utils.image import show_cam_on_image
-
+# Grad-CAM explanation
 def get_grad_cam_explanation(vision_model, image, target_layer):
-    cam = GradCAM(model=vision_model, target_layers=[target_layer])
+    cam = GradCAM(model=vision_model, target_layers=[target_layer], use_cuda=torch.cuda.is_available())
     grayscale_cam = cam(input_tensor=image.unsqueeze(0))[0, :]
-    image = image.permute(1, 2, 0).numpy()
+    image = image.permute(1, 2, 0).cpu().numpy()
     cam_image = show_cam_on_image(image, grayscale_cam, use_rgb=True)
     return cam_image
 
 # Example usage
 target_layer = net.layer4[-1]
-image, _ = dataset[0]
-image = image.to(device)
-cam_image = get_grad_cam_explanation(net, image, target_layer)
+sample_image, _ = dataset[0]
+sample_image = sample_image.to(device)
+cam_image = get_grad_cam_explanation(net, sample_image, target_layer)
 
 print("Grad-CAM Image Generated")
 
@@ -194,7 +191,7 @@ def save_grad_cam(cam_image, filename='grad_cam_output.png'):
     plt.imsave(filename, cam_image)
 
 # Example usage
-cam_image = get_grad_cam_explanation(net, image, target_layer)
+cam_image = get_grad_cam_explanation(net, sample_image, target_layer)
 
 # Visualize the Grad-CAM image
 visualize_grad_cam(cam_image)
