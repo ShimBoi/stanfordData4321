@@ -184,12 +184,15 @@ class GradCAM:
         one_hot = torch.zeros((1, self.model.fc.out_features), dtype=torch.float32).to(device)
         one_hot[0][class_idx] = 1
         self.model.zero_grad()
-        
-        # Run a forward pass and get the output
+
+        # Run a forward pass to obtain the activations from the target layer
         forward_output = self.forward_relu_outputs
         forward_output_flatten = forward_output.view(forward_output.size(0), -1)
+
+        # Perform a forward pass through the fully connected layer
         output = self.model.fc(forward_output_flatten)
-        
+
+        # Backward pass to get gradients
         output.backward(gradient=one_hot, retain_graph=True)
         grads = self.gradients[0]
         activations = self.forward_relu_outputs[0]
@@ -224,3 +227,4 @@ superimposed_img = heatmap * 0.4 + img
 superimposed_img = superimposed_img / np.max(superimposed_img)
 plt.imshow(superimposed_img)
 plt.show()
+
