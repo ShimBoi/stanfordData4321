@@ -166,14 +166,14 @@ print(f"Accuracy of the network: {100 * correct / total:.2f} %")
 
 # Grad-CAM explanation
 def get_grad_cam_explanation(vision_model, image, target_layer):
-    cam = GradCAM(model=vision_model, target_layers=[target_layer], use_cuda=torch.cuda.is_available())
-    grayscale_cam = cam(input_tensor=image.unsqueeze(0))[0, :]
+    cam = GradCAM(model=vision_model, target_layers=[target_layer])
+    grayscale_cam = cam(input_tensor=image.unsqueeze(0))
     image = image.permute(1, 2, 0).cpu().numpy()
-    cam_image = show_cam_on_image(image, grayscale_cam, use_rgb=True)
+    cam_image = show_cam_on_image(image, grayscale_cam[0, :], use_rgb=True)
     return cam_image
 
 # Example usage
-target_layer = net.layer4[-1]
+target_layer = net.layer4[-1].conv2  # Adjust target layer
 sample_image, _ = dataset[0]
 sample_image = sample_image.to(device)
 cam_image = get_grad_cam_explanation(net, sample_image, target_layer)
@@ -189,9 +189,6 @@ def visualize_grad_cam(cam_image):
 # Function to save the Grad-CAM image
 def save_grad_cam(cam_image, filename='grad_cam_output.png'):
     plt.imsave(filename, cam_image)
-
-# Example usage
-cam_image = get_grad_cam_explanation(net, sample_image, target_layer)
 
 # Visualize the Grad-CAM image
 visualize_grad_cam(cam_image)
