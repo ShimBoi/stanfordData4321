@@ -9,13 +9,15 @@ from PIL import Image
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+import torchvision
+from transformers import GPT2Tokenizer, GPT2Model
 import cv2
 
 # Print the current working directory
 print("Current working directory:", os.getcwd())
 
 # Load the Excel file
-excel_file_path = './dataRef/release_midas.xlsx'
+excel_file_path = '/content/drive/MyDrive/midasmultimodalimagedatasetforaibasedskincancer/release_midas.xlsx'
 if not os.path.exists(excel_file_path):
     raise FileNotFoundError(f"{excel_file_path} does not exist. Please check the path.")
 
@@ -89,10 +91,10 @@ class ExcelImageDataset(Dataset):
 
 # Define the root directories
 root_dirs = [
-    '/root/stanfordData4321/stanfordData4321/images2',
-    '/root/stanfordData4321/stanfordData4321/images1',
-    '/root/stanfordData4321/stanfordData4321/images3',
-    '/root/stanfordData4321/stanfordData4321/images4'
+    '/content/drive/MyDrive/midasmultimodalimagedatasetforaibasedskincancer/images2',
+    '/content/drive/MyDrive/midasmultimodalimagedatasetforaibasedskincancer/images1',
+    '/content/drive/MyDrive/midasmultimodalimagedatasetforaibasedskincancer/images3',
+    '/content/drive/MyDrive/midasmultimodalimagedatasetforaibasedskincancer/images4'
 ]
 
 # Create dataset and data loader
@@ -162,69 +164,42 @@ with torch.no_grad():
 
 print(f"Accuracy of the network: {100 * correct / total:.2f} %")
 
-# Visualize Grad-CAM
-class GradCAM:
-    def __init__(self, model, target_layer):
-        self.model = model
-        self.target_layer = target_layer
-        self.gradients = None
-        self.forward_relu_outputs = None
-        self.model.eval()
+# Grad-CAM class
+from pytorch_grad_cam import GradCAM
+from pytorch_grad_cam.utils.image import show_cam_on_image
 
-        def save_gradient(grad):
-            self.gradients = grad
+def get_grad_cam_explanation(vision_model, image, target_layer):
+    cam = GradCAM(model=vision_model, target_layers=[target_layer])
+    grayscale_cam = cam(input_tensor=image.unsqueeze(0))[0, :]
+    image = image.permute(1, 2, 0).numpy()
+    cam_image = show_cam_on_image(image, grayscale_cam, use_rgb=True)
+    return cam_image
 
-        def forward_hook(module, input, output):
-            self.forward_relu_outputs = output
-            output.register_hook(save_gradient)
+# Example usage
+target_layer = net.layer4[-1]
+image, _ = dataset[0]
+image = image.to(device)
+cam_image = get_grad_cam_explanation(net, image, target_layer)
 
-        target_layer.register_forward_hook(forward_hook)
+print("Grad-CAM Image Generated")
 
-    def get_heatmap(self, class_idx):
-        one_hot = torch.zeros((1, self.model.fc.out_features), dtype=torch.float32).to(device)
-        one_hot[0][class_idx] = 1
-        self.model.zero_grad()
+# Function to visualize the Grad-CAM image
+def visualize_grad_cam(cam_image):
+    plt.imshow(cam_image)
+    plt.axis('off')  # Hide the axis
+    plt.show()
 
-        # Run a forward pass to obtain the activations from the target layer
-        forward_output = self.forward_relu_outputs
-        forward_output_flatten = forward_output.view(forward_output.size(0), -1)
+# Function to save the Grad-CAM image
+def save_grad_cam(cam_image, filename='grad_cam_output.png'):
+    plt.imsave(filename, cam_image)
 
-        # Perform a forward pass through the fully connected layer
-        output = self.model.fc(forward_output_flatten)
+# Example usage
+cam_image = get_grad_cam_explanation(net, image, target_layer)
 
-        # Backward pass to get gradients
-        output.backward(gradient=one_hot, retain_graph=True)
-        grads = self.gradients[0]
-        activations = self.forward_relu_outputs[0]
-        pooled_grads = torch.mean(grads, dim=[0, 2, 3])
+# Visualize the Grad-CAM image
+visualize_grad_cam(cam_image)
 
-        for i in range(len(pooled_grads)):
-            activations[i, :, :] *= pooled_grads[i]
+# Save the Grad-CAM image
+save_grad_cam(cam_image, 'grad_cam_image.png')
 
-        heatmap = torch.mean(activations, dim=0).cpu().detach().numpy()
-        heatmap = np.maximum(heatmap, 0)
-        heatmap = heatmap / heatmap.max()
-        return heatmap
-
-# Instantiate GradCAM and get heatmap
-grad_cam = GradCAM(net, net.layer4[1].conv2)
-sample_img, _ = dataset[0]
-sample_img = sample_img.unsqueeze(0).to(device)
-output = net(sample_img)
-predicted = torch.max(output.data, 1)[1]
-heatmap = grad_cam.get_heatmap(predicted[0].item())
-
-# Display heatmap
-plt.matshow(heatmap)
-plt.show()
-
-# Overlay heatmap on the original image
-img = sample_img.squeeze().cpu().numpy().transpose((1, 2, 0))
-heatmap = cv2.resize(heatmap, (img.shape[1], img.shape[0]))
-heatmap = np.uint8(255 * heatmap)
-heatmap = cv2.applyColorMap(heatmap, cv2.COLORMAP_JET)
-superimposed_img = heatmap * 0.4 + img
-superimposed_img = superimposed_img / np.max(superimposed_img)
-plt.imshow(superimposed_img)
-plt.show()
-
+print("Grad-CAM Image Generated and Saved")
