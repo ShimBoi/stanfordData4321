@@ -1,3 +1,4 @@
+import os
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -11,10 +12,9 @@ import matplotlib.pyplot as plt
 import torchvision
 from transformers import GPT2Tokenizer, GPT2Model
 import cv2
-import os
 
-# Set up the device
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+# Print the current working directory
+print("Current working directory:", os.getcwd())
 
 # Load the Excel file
 excel_file_path = './dataRef/release_midas.xlsx'
@@ -42,7 +42,7 @@ transform = transforms.Compose([
 
 def imshow(img):
     img = img / 2 + 0.5
-    npimg = img.numpy()
+    npimg = img.cpu().numpy()  # Ensure tensor is moved to CPU
     plt.imshow(np.transpose(npimg, (1, 2, 0)))
     plt.show()
 
@@ -61,25 +61,19 @@ class ExcelImageDataset(Dataset):
     def _get_image_paths(self):
         valid_paths = []
         for idx, row in self.data_frame.iterrows():
-            img_name = row['midas_file_name']
-            label = row['clinical_impression_1']
-
-            # Check in both root directories
-            found = False
+            img_found = False
             for root_dir in self.root_dirs:
-                full_img_path = os.path.join(root_dir, img_name)
-                if os.path.isfile(full_img_path):
-                    if label in self.label_map:
-                        valid_paths.append((full_img_path, label))
-                    else:
-                        print(f"Warning: Label '{label}' not in label_map for image {full_img_path}.")
-                    found = True
+                img_name = os.path.join(root_dir, row['midas_file_name'])
+                if os.path.isfile(img_name):
+                    label = row['clinical_impression_1']
+                    if label not in self.label_map:
+                        print(f"Warning: Label '{label}' not in label_map.")
+                        continue
+                    valid_paths.append((img_name, label))
+                    img_found = True
                     break
-            
-            if not found:
-                print(f"Warning: {img_name} not found in any of the root directories.")
-
-        print(f"Total valid images found: {len(valid_paths)}")
+            if not img_found:
+                print(f"Warning: Image {row['midas_file_name']} not found in any root directory.")
         return valid_paths
 
     def __len__(self):
@@ -95,100 +89,48 @@ class ExcelImageDataset(Dataset):
         label = torch.tensor(self.label_map.get(label, -1), dtype=torch.long)
         return image, label
 
-
-# Example usage with multiple root directories
+# Define the root directories
 root_dirs = [
+    '/root/stanfordData4321/stanfordData4321/images2',
     '/root/stanfordData4321/stanfordData4321/images1',
-    '/root/stanfordData123/stanfordData123/images2',
-    '/root/stanfordData123/stanfordData123/images3',
-    '/root/stanfordData123/stanfordData123/images4'
+    '/root/stanfordData4321/stanfordData4321/images3',
+    '/root/stanfordData4321/stanfordData4321/images4'
 ]
-data = ExcelImageDataset(excel_file=excel_file_path, root_dirs=root_dirs, transform=transform)
 
-# 8:2 split for train and test
-train_size = int(0.80 * len(data))
-test_size = len(data) - train_size
-train_data, test_data = random_split(data, [train_size, test_size])
+# Create dataset and data loader
+dataset = ExcelImageDataset(excel_file_path, root_dirs, transform)
+train_size = int(0.8 * len(dataset))
+test_size = len(dataset) - train_size
+train_dataset, test_dataset = random_split(dataset, [train_size, test_size])
 
-# DataLoaders for training and testing data
-batch_size = 16
-train_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True)
-test_loader = DataLoader(test_data, batch_size=batch_size, shuffle=False)
+train_loader = DataLoader(train_dataset, batch_size=4, shuffle=True)
+test_loader = DataLoader(test_dataset, batch_size=4, shuffle=False)
 
-# Example of showing a batch of images
-dataiter = iter(train_loader)
-images, labels = next(dataiter)
-imshow(torchvision.utils.make_grid(images.cpu()))  # Move to CPU for plotting
-
-# Load a ResNet model and modify the final layer
-net = models.resnet18(weights='IMAGENET1K_V1')  # Updated to use 'weights'
+# Load pre-trained model and modify the final layer
+net = models.resnet18(pretrained=True)
 num_ftrs = net.fc.in_features
 net.fc = nn.Linear(num_ftrs, len(categories))
-net.to(device)  # Move model to the device
 
-# Define the loss function and optimizer
+# Move the model to GPU
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+net.to(device)
+
+# Define loss function and optimizer
 criterion = nn.CrossEntropyLoss()
-optimizer = optim.SGD(net.parameters(), lr=0.1, momentum=0.9)
-
-# Create a directory to save model weights if it doesn't exist
-os.makedirs('saved_models', exist_ok=True)
-
-# Load from a checkpoint if available
-start_epoch = 0
-checkpoint_path = 'saved_models/resnet_epoch_25.pth'  # Change this to the latest checkpoint
-if os.path.exists(checkpoint_path):
-    net.load_state_dict(torch.load(checkpoint_path))
-    start_epoch = int(checkpoint_path.split('_')[-1].split('.')[0])
-
-# Initialize GPT-2 tokenizer and model
-tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
-gpt_model = GPT2Model.from_pretrained("gpt2")
-
-# Set padding token
-tokenizer.pad_token = tokenizer.eos_token
+optimizer = optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
 
 # Training loop
-num_epochs = 6
-for epoch in range(start_epoch, num_epochs):
-    print("Epoch", epoch + 1)
+for epoch in range(2):  # Loop over the dataset multiple times
     running_loss = 0.0
     for i, data in enumerate(train_loader, 0):
+        # Get the inputs and move them to GPU
         inputs, labels = data
-        inputs, labels = inputs.to(device), labels.to(device)  # Move data to device
+        inputs, labels = inputs.to(device), labels.to(device)
 
+        # Zero the parameter gradients
         optimizer.zero_grad()
 
-        # Process images through ResNet
-        outputs = net(inputs)
-
-        # Create dummy text inputs for GPT-2 with placeholder text
-        dummy_texts = ["Sample text"] * inputs.size(0)  # Use non-empty placeholder text
-        text_inputs = tokenizer(dummy_texts, return_tensors="pt", padding=True, truncation=True)
-
-        # Debugging: Print text inputs shapes and content
-        print(f"text_inputs input_ids shape: {text_inputs['input_ids'].shape}")
-
-        # Check if text_inputs are valid
-        if text_inputs['input_ids'].size(1) == 0:
-            raise ValueError("Text inputs are empty or invalid")
-
-        # Move text inputs to the same device as the model
-        text_inputs = {k: v.to(device) for k, v in text_inputs.items()}
-
-        # Process text inputs through GPT-2
-        try:
-            gpt_outputs = gpt_model(**text_inputs).last_hidden_state
-        except Exception as e:
-            print(f"Error during GPT-2 processing: {e}")
-            continue
-
-        # Ensure combined_outputs tensor is correctly formed
-        if outputs.size(0) != gpt_outputs.size(0):
-            raise ValueError("Mismatch in batch sizes between image and text outputs")
-
-        # Combine the outputs
-
-        # Forward pass through ResNet
+        # Forward + backward + optimize
         outputs = net(inputs)
         loss = criterion(outputs, labels)
         loss.backward()
@@ -196,16 +138,17 @@ for epoch in range(start_epoch, num_epochs):
 
         # Print statistics
         running_loss += loss.item()
-        if i % 2000 == 1999:  # print every 2000 mini-batches
+        if i % 2000 == 1999:  # Print every 2000 mini-batches
             print(f"[{epoch + 1}, {i + 1}] loss: {running_loss / 2000:.3f}")
             running_loss = 0.0
 
 print("Finished Training")
 
-# Save the final model
-torch.save(net.state_dict(), "saved_models/resnet_final.pth")
+# Save the trained model
+PATH = './cifar_net.pth'
+torch.save(net.state_dict(), PATH)
 
-# Evaluate the model
+# Test the model
 correct = 0
 total = 0
 with torch.no_grad():
@@ -217,58 +160,60 @@ with torch.no_grad():
         total += labels.size(0)
         correct += (predicted == labels).sum().item()
 
-print(f"Accuracy of the network: {100 * correct / total} %")
+print(f"Accuracy of the network: {100 * correct / total:.2f} %")
 
-# Grad-CAM implementation
+# Visualize Grad-CAM
 class GradCAM:
     def __init__(self, model, target_layer):
         self.model = model
         self.target_layer = target_layer
         self.gradients = None
-        self.activations = None
-        self.hook_handlers = []
-        self._register_hooks()
+        self.forward_relu_outputs = None
+        self.model.eval()
 
-    def _register_hooks(self):
-        def backward_hook(module, grad_input, grad_output):
-            self.gradients = grad_output[0]
+        def save_gradient(grad):
+            self.gradients = grad
 
         def forward_hook(module, input, output):
-            self.activations = output
+            self.forward_relu_outputs = output
+            output.register_hook(save_gradient)
 
-        self.hook_handlers.append(self.target_layer.register_forward_hook(forward_hook))
-        self.hook_handlers.append(self.target_layer.register_backward_hook(backward_hook))
+        target_layer.register_forward_hook(forward_hook)
 
-    def generate(self, input_image, class_idx):
-        self.model.zero_grad()
-        output = self.model(input_image)
-        one_hot = torch.zeros((1, output.size()[-1]), device=output.device)
+    def get_heatmap(self, class_idx):
+        one_hot = torch.zeros((1, self.model.fc.out_features), dtype=torch.float32)
         one_hot[0][class_idx] = 1
-        output.backward(gradient=one_hot, retain_graph=True)
-        gradients = self.gradients
-        activations = self.activations
+        self.model.zero_grad()
+        output = self.forward_relu_outputs.backward(gradient=one_hot, retain_graph=True)
+        grads = self.gradients[0]
+        activations = self.forward_relu_outputs[0]
+        pooled_grads = torch.mean(grads, dim=[0, 2, 3])
 
-        weights = torch.mean(gradients, dim=[2, 3], keepdim=True)
-        grad_cam = torch.sum(weights * activations, dim=1, keepdim=True)
-        grad_cam = torch.clamp(grad_cam, min=0)
-        grad_cam = nn.functional.interpolate(grad_cam, size=input_image.shape[2:], mode='bilinear', align_corners=False)
+        for i in range(len(pooled_grads)):
+            activations[i, :, :] *= pooled_grads[i]
 
-        return grad_cam.squeeze().detach()
+        heatmap = torch.mean(activations, dim=0).cpu().detach().numpy()
+        heatmap = np.maximum(heatmap, 0)
+        heatmap = heatmap / heatmap.max()
+        return heatmap
 
-    def __del__(self):
-        for handler in self.hook_handlers:
-            handler.remove()
+# Instantiate GradCAM and get heatmap
+grad_cam = GradCAM(net, net.layer4[1].conv2)
+sample_img, _ = dataset[0]
+sample_img = sample_img.unsqueeze(0).to(device)
+output = net(sample_img)
+predicted = torch.max(output.data, 1)[1]
+heatmap = grad_cam.get_heatmap(predicted[0].item())
 
-# Usage of Grad-CAM
-grad_cam = GradCAM(model=net, target_layer=net.layer4[1].conv2)
+# Display the heatmap
+plt.matshow(heatmap)
+plt.show()
 
-# Assuming `inputs` is a batch of test images and `predicted` are the predicted labels
-inputs, labels = next(iter(test_loader))
-inputs, labels = inputs.to(device), labels.to(device)
-outputs = net(inputs)
-_, predicted = torch.max(outputs.data, 1)
-
-# Generate and visualize Grad-CAM heatmap for the first image in the batch
-heatmap = grad_cam.generate(inputs[0].unsqueeze(0), predicted[0].item())
-plt.imshow(heatmap.cpu().numpy(), cmap='jet')
+# Overlay the heatmap on the image
+img = sample_img.squeeze(0).cpu().numpy().transpose(1, 2, 0)
+heatmap = cv2.resize(heatmap, (img.shape[1], img.shape[0]))
+heatmap = np.uint8(255 * heatmap)
+heatmap = cv2.applyColorMap(heatmap, cv2.COLORMAP_JET)
+superimposed_img = heatmap * 0.4 + img
+plt.imshow(superimposed_img)
 plt.show()
