@@ -187,7 +187,8 @@ class GradCAM:
         one_hot[0][class_idx] = 1
         self.model.zero_grad()
         # Reshape the forward outputs to match the fully connected layer input
-        output = self.model.fc(self.forward_relu_outputs.view(self.forward_relu_outputs.size(0), -1))
+        forward_output = self.forward_relu_outputs.view(self.forward_relu_outputs.size(0), -1)
+        output = self.model.fc(forward_output)
         output.backward(gradient=one_hot, retain_graph=True)
         grads = self.gradients[0]
         activations = self.forward_relu_outputs[0]
