@@ -107,7 +107,8 @@ train_loader = DataLoader(train_dataset, batch_size=4, shuffle=True)
 test_loader = DataLoader(test_dataset, batch_size=4, shuffle=False)
 
 # Load pre-trained model and modify the final layer
-net = models.resnet18(pretrained=True)
+weights = models.ResNet18_Weights.DEFAULT
+net = models.resnet18(weights=weights)
 num_ftrs = net.fc.in_features
 net.fc = nn.Linear(num_ftrs, len(categories))
 
@@ -117,10 +118,10 @@ net.to(device)
 
 # Define loss function and optimizer
 criterion = nn.CrossEntropyLoss()
-optimizer = optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
+optimizer = optim.SGD(net.parameters(), lr=0.1, momentum=0.9)
 
 # Training loop
-for epoch in range(2):  # Loop over the dataset multiple times
+for epoch in range(3):  # Loop over the dataset multiple times
     running_loss = 0.0
     for i, data in enumerate(train_loader, 0):
         # Get the inputs and move them to GPU
