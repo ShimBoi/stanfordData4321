@@ -11,8 +11,16 @@ import matplotlib.pyplot as plt
 
 class CustomDataset(Dataset):
     def __init__(self, excel_file, transform=None):
-        self.data = pd.read_excel(excel_file, engine='openpyxl')  # Specify engine manually
+        self.data = pd.read_excel(excel_file, engine='openpyxl')
         self.transform = transform
+
+        # Define the keys for metadata
+        self.metadata_keys = [
+            'midas_iscontrol', 'midas_distance', 'midas_location', 
+            'midas_pathreport', 'midas_gender', 'midas_age', 
+            'midas_fitzpatrick', 'midas_melanoma', 'midas_ethnicity', 
+            'midas_race', 'length_(mm)', 'width_(mm)'
+        ]
 
     def __len__(self):
         return len(self.data)
@@ -20,24 +28,37 @@ class CustomDataset(Dataset):
     def __getitem__(self, idx):
         # Load image
         img_path = self.data.iloc[idx]['midas_path']
-        image = Image.open(img_path).convert('RGB')
-
+        
+        try:
+            image = Image.open(img_path).convert('RGB')
+        except FileNotFoundError:
+            print(f"Image file not found: {img_path}")
+            image = Image.new('RGB', (224, 224), color='gray')
+        
         # Apply transformations to image
         if self.transform:
             image = self.transform(image)
 
         # Load metadata
-        metadata = self.data.iloc[idx][[
-            'midas_iscontrol', 'midas_distance', 'midas_location', 
-            'midas_pathreport', 'midas_gender', 'midas_age', 
-            'midas_fitzpatrick', 'midas_melanoma', 'midas_ethnicity', 
-            'midas_race', 'length_(mm)', 'width_(mm)'
-        ]].to_dict()
+        metadata = self.data.iloc[idx][self.metadata_keys].to_dict()
+        
+        # Clean metadata by removing empty columns
+        cleaned_metadata = {key: value for key, value in metadata.items() if pd.notna(value)}
+
+        # Handle missing metadata values (if needed)
+        encoded_metadata = self.encode_metadata(cleaned_metadata)
 
         # Load label
         label = self.data.iloc[idx]['clinical_impression_1']
 
-        return image, metadata, label
+        return image, encoded_metadata, label
+
+    def encode_metadata(self, metadata):
+        # Convert metadata to tensor, fill missing values with default value
+        default_value = 0.0
+        metadata_values = [metadata.get(key, default_value) for key in self.metadata_keys]
+        return torch.tensor(metadata_values, dtype=torch.float32)
+
 
 class EnhancedCLIPModel(nn.Module):
     def __init__(self):
