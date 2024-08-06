@@ -107,6 +107,7 @@ criterion = nn.CrossEntropyLoss()
 for epoch in range(3):  # Loop over the dataset multiple times
     model.train()
     running_loss = 0.0
+    print(epoch)
     for i, data in enumerate(train_loader, 0):
         inputs, texts, labels = data
         inputs, labels = inputs.to(device), labels.to(device)
@@ -128,6 +129,7 @@ for epoch in range(3):  # Loop over the dataset multiple times
         running_loss += loss.item()
         if i % 200 == 199:  # Print every 200 mini-batches
             print(f"[{epoch + 1}, {i + 1}] loss: {running_loss / 200:.3f}")
+            print(running_loss)
             running_loss = 0.0
 
 print("Finished Training")
