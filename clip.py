@@ -8,6 +8,8 @@ from transformers import BertTokenizer, BertModel
 from torch.utils.data import Dataset, DataLoader
 from sklearn.metrics import accuracy_score, classification_report
 import matplotlib.pyplot as plt
+from sklearn.preprocessing import LabelEncoder
+
 
 class CustomDataset(Dataset):
     def __init__(self, excel_file, transform=None):
