@@ -4,7 +4,7 @@ import torch.nn as nn
 import torch.optim as optim
 import torchvision.transforms as transforms
 import torchvision.models as models
-from torch.utils.data import DataLoader, Dataset, random_split, WeightedRandomSampler
+from torch.utils.data import DataLoader, Dataset, random_split, SubsetRandomSampler
 from PIL import Image
 import pandas as pd
 import numpy as np
@@ -100,21 +100,20 @@ root_dirs = [
     '/root/stanfordData4321/stanfordData4321/images4'
 ]
 
-# Create dataset and data loader
+# Create dataset and split it
 dataset = ExcelImageDataset(excel_file_path, root_dirs, transform)
-
-# Compute class weights for imbalanced dataset
-class_counts = df['clinical_impression_1'].value_counts().to_dict()
-class_weights = {cls: 1.0/count for cls, count in class_counts.items()}
-weights = [class_weights[label] for _, label in dataset.image_paths]
-sampler = WeightedRandomSampler(weights, len(weights))
-
-# Split dataset into training and testing sets
 train_size = int(0.8 * len(dataset))
 test_size = len(dataset) - train_size
 train_dataset, test_dataset = random_split(dataset, [train_size, test_size])
 
-train_loader = DataLoader(train_dataset, batch_size=4, sampler=sampler)
+# Compute class weights for imbalanced dataset
+class_counts = df['clinical_impression_1'].value_counts().to_dict()
+class_weights = {cls: 1.0/count for cls, count in class_counts.items()}
+train_weights = [class_weights[label] for _, label in train_dataset]
+train_sampler = WeightedRandomSampler(train_weights, len(train_weights))
+
+# Create data loaders
+train_loader = DataLoader(train_dataset, batch_size=4, sampler=train_sampler)
 test_loader = DataLoader(test_dataset, batch_size=4, shuffle=False)
 
 # Load pre-trained model and modify the final layer
@@ -148,7 +147,7 @@ scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=7, gamma=0.1)
 num_epochs = 50
 for epoch in range(num_epochs):  # Loop over the dataset multiple times
     running_loss = 0.0
-    print(epoch)
+    print(f"Epoch {epoch+1}")
     for i, data in enumerate(train_loader, 0):
         # Get the inputs and move them to GPU
         inputs, labels = data
