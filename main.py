@@ -115,6 +115,7 @@ net.fc = nn.Linear(num_ftrs, len(categories))
 # Move the model to GPU
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 net.to(device)
+print(device)
 
 # Define loss function and optimizer
 criterion = nn.CrossEntropyLoss()
