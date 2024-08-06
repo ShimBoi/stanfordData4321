@@ -19,7 +19,7 @@ class CustomDataset(Dataset):
         # Initialize label encoders for categorical columns
         self.label_encoders = {}
         categorical_columns = [
-            'midas_iscontrol', 'midas_distance', 'midas_location', 'midas_path',
+            'midas_iscontrol', 'midas_location', 'midas_path',
             'midas_pathreport', 'midas_gender', 'midas_fitzpatrick', 'midas_melanoma',
             'midas_ethnicity', 'midas_race'
         ]
