@@ -99,3 +99,114 @@ def train(model, dataloader, optimizer, criterion):
         # Backward pass and optimization
         loss.backward()
         optimizer.step()
+from torch.utils.data import DataLoader
+
+# Define transformations
+data_transform = transforms.Compose([
+    transforms.Resize((224, 224)),
+    transforms.ToTensor(),
+    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+])
+
+# Initialize dataset and dataloader
+dataset = CustomDataset(excel_file='/content/drive/MyDrive/midasmultimodalimagedatasetforaibasedskincancer/release_midas.xlsx', transform=data_transform)
+dataloader = DataLoader(dataset, batch_size=8, shuffle=True)
+model = EnhancedCLIPModel().to(device)
+optimizer = torch.optim.Adam(model.parameters(), lr=1e-5)
+criterion = nn.CrossEntropyLoss()  # or your chosen loss function
+def train(model, dataloader, optimizer, criterion, device):
+    model.train()
+    for images, metadata, labels in dataloader:
+        images = images.to(device)
+        metadata = torch.tensor(metadata, dtype=torch.float32).to(device)
+        labels = labels.to(device)
+
+        optimizer.zero_grad()
+
+        # Forward pass
+        vision_features, text_features, metadata_features = model(images, labels, metadata)
+
+        # Compute similarity and loss
+        similarity = model.compute_similarity(vision_features, text_features, metadata_features)
+        loss = criterion(similarity, labels)
+
+        # Backward pass and optimization
+        loss.backward()
+        optimizer.step()
+
+        print(f'Loss: {loss.item()}')
+
+# Run training
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+train(model, dataloader, optimizer, criterion, device)
+
+# Assuming you have a separate validation dataset
+val_dataset = CustomDataset(excel_file='/content/drive/MyDrive/midasmultimodalimagedatasetforaibasedskincancer/val_midas.xlsx', transform=data_transform)
+val_dataloader = DataLoader(val_dataset, batch_size=8, shuffle=False)
+from sklearn.metrics import accuracy_score, classification_report
+
+def evaluate(model, dataloader, device):
+    model.eval()
+    all_labels = []
+    all_predictions = []
+    
+    with torch.no_grad():
+        for images, metadata, labels in dataloader:
+            images = images.to(device)
+            metadata = torch.tensor(metadata, dtype=torch.float32).to(device)
+            labels = labels.to(device)
+            
+            # Forward pass
+            vision_features, text_features, metadata_features = model(images, labels, metadata)
+            
+            # Compute similarity and get predictions
+            similarity = model.compute_similarity(vision_features, text_features, metadata_features)
+            _, predictions = torch.max(similarity, dim=1)
+            
+            all_labels.extend(labels.cpu().numpy())
+            all_predictions.extend(predictions.cpu().numpy())
+    
+    accuracy = accuracy_score(all_labels, all_predictions)
+    report = classification_report(all_labels, all_predictions, target_names=dataloader.dataset.classes)
+    
+    return accuracy, report
+# Run evaluation
+accuracy, report = evaluate(model, val_dataloader, device)
+
+print(f'Accuracy: {accuracy:.4f}')
+print('Classification Report:')
+print(report)
+import matplotlib.pyplot as plt
+
+def visualize_predictions(model, dataloader, device, num_samples=5):
+    model.eval()
+    with torch.no_grad():
+        for images, metadata, labels in dataloader:
+            images = images.to(device)
+            metadata = torch.tensor(metadata, dtype=torch.float32).to(device)
+            labels = labels.to(device)
+            
+            # Forward pass
+            vision_features, text_features, metadata_features = model(images, labels, metadata)
+            
+            # Compute similarity and get predictions
+            similarity = model.compute_similarity(vision_features, text_features, metadata_features)
+            _, predictions = torch.max(similarity, dim=1)
+            
+            # Display results
+            for i in range(num_samples):
+                plt.figure(figsize=(12, 6))
+                plt.subplot(1, 2, 1)
+                plt.imshow(images[i].cpu().permute(1, 2, 0))
+                plt.title(f'True: {labels[i].item()}, Pred: {predictions[i].item()}')
+                plt.axis('off')
+                
+                plt.subplot(1, 2, 2)
+                plt.bar(['True', 'Pred'], [labels[i].item(), predictions[i].item()])
+                plt.title(f'Sample {i}')
+                plt.show()
+                
+            break  # Remove this break to visualize more samples
+
+# Visualize predictions
+visualize_predictions(model, val_dataloader, device)
