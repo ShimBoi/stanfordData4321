@@ -4,7 +4,7 @@ import torch.nn as nn
 import torch.optim as optim
 import torchvision.transforms as transforms
 import torchvision.models as models
-from torch.utils.data import DataLoader, Dataset, random_split, SubsetRandomSampler
+from torch.utils.data import DataLoader, Dataset, random_split, WeightedRandomSampler
 from PIL import Image
 import pandas as pd
 import numpy as np
@@ -107,9 +107,9 @@ test_size = len(dataset) - train_size
 train_dataset, test_dataset = random_split(dataset, [train_size, test_size])
 
 # Compute class weights for imbalanced dataset
-class_counts = df['clinical_impression_1'].value_counts().to_dict()
-class_weights = {cls: 1.0/count for cls, count in class_counts.items()}
-train_weights = [class_weights[label] for _, label in train_dataset]
+class_counts = df['clinical_impression_1'].map(dataset.label_map).value_counts().to_dict()
+class_weights = {dataset.label_map[cls]: 1.0/count for cls, count in class_counts.items()}
+train_weights = [class_weights[label.item()] for _, label in train_dataset]
 train_sampler = WeightedRandomSampler(train_weights, len(train_weights))
 
 # Create data loaders
