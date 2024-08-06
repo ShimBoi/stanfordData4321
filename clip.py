@@ -113,8 +113,10 @@ for epoch in range(3):  # Loop over the dataset multiple times
         inputs, labels = inputs.to(device), labels.to(device)
 
         # Check labels are within the correct range
-        if torch.any(labels < 0) or torch.any(labels >= len(categories)):
+        invalid_labels = labels[labels < 0] | labels[labels >= len(categories)]
+        if torch.any(invalid_labels):
             print(f"Error: Found label out of range. Labels: {labels}")
+            continue
 
         # Preprocess the text inputs
         text_inputs = processor(text=texts, return_tensors="pt", padding=True, truncation=True).to(device)
