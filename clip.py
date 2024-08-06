@@ -113,8 +113,7 @@ for epoch in range(3):  # Loop over the dataset multiple times
         inputs, labels = inputs.to(device), labels.to(device)
 
         # Check labels are within the correct range
-        invalid_labels = labels[labels < 0] | labels[labels >= len(categories)]
-        if torch.any(invalid_labels):
+        if not torch.all((labels >= 0) & (labels < len(categories))):
             print(f"Error: Found label out of range. Labels: {labels}")
             continue
 
