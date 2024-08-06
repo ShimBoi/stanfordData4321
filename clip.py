@@ -126,6 +126,10 @@ for epoch in range(3):  # Loop over the dataset multiple times
         # Forward + backward + optimize
         outputs = model(input_ids=text_inputs.input_ids, pixel_values=inputs, attention_mask=text_inputs.attention_mask)
         logits_per_image = outputs.logits_per_image
+        
+        # Print labels for debugging
+        print(f"Epoch: {epoch+1}, Batch: {i+1}, Labels: {labels}")
+
         loss = criterion(logits_per_image, labels)
         
         # Add debugging prints
