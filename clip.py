@@ -170,7 +170,7 @@ data_transform = transforms.Compose([
 ])
 
 # Initialize dataset and dataloader
-dataset = CustomDataset(excel_file='/content/drive/MyDrive/midasmultimodalimagedatasetforaibasedskincancer/release_midas.xlsx', transform=data_transform)
+dataset = CustomDataset(excel_file='/root/stanfordData4321/stanfordData4321/dataRef/release_midas.xlsx', transform=data_transform)
 dataloader = DataLoader(dataset, batch_size=8, shuffle=True)
 
 model = EnhancedCLIPModel().to(device)
