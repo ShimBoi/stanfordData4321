@@ -108,7 +108,13 @@ train_dataset, test_dataset = random_split(dataset, [train_size, test_size])
 
 # Compute class weights for imbalanced dataset
 class_counts = df['clinical_impression_1'].map(dataset.label_map).value_counts().to_dict()
-class_weights = {dataset.label_map[cls]: 1.0/count for cls, count in class_counts.items()}
+print("Class counts:", class_counts)  # Debug print
+print("Label map:", dataset.label_map)  # Debug print
+
+# Ensure class_weights use correct keys from label_map
+class_weights = {idx: 1.0/count for label, idx in dataset.label_map.items() if label in class_counts for count in [class_counts[label]]}
+print("Class weights:", class_weights)  # Debug print
+
 train_weights = [class_weights[label.item()] for _, label in train_dataset]
 train_sampler = WeightedRandomSampler(train_weights, len(train_weights))
 
