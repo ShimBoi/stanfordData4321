@@ -1,74 +1,66 @@
 import pandas as pd
-from torchvision import transforms
+from sklearn.preprocessing import LabelEncoder
 from PIL import Image
 import torch
-import torch.nn as nn
-import torchvision.models as models
-from transformers import BertTokenizer, BertModel
-from torch.utils.data import Dataset, DataLoader
-from sklearn.metrics import accuracy_score, classification_report
-import matplotlib.pyplot as plt
-
-import pandas as pd
-from torchvision import transforms
-from PIL import Image
-import torch
-import torch.nn as nn
-import torchvision.models as models
-from transformers import BertTokenizer, BertModel
-from torch.utils.data import Dataset, DataLoader
-from sklearn.metrics import accuracy_score, classification_report
-import matplotlib.pyplot as plt
+from torch.utils.data import Dataset
+import os
 
 class CustomDataset(Dataset):
     def __init__(self, excel_file, transform=None):
         self.data = pd.read_excel(excel_file, engine='openpyxl')
         self.transform = transform
 
-        # Define the keys for metadata
-        self.metadata_keys = [
-            'midas_iscontrol', 'midas_distance', 'midas_location', 
-            'midas_pathreport', 'midas_gender', 'midas_age', 
-            'midas_fitzpatrick', 'midas_melanoma', 'midas_ethnicity', 
-            'midas_race', 'length_(mm)', 'width_(mm)'
+        # Initialize label encoders for categorical columns
+        self.label_encoders = {}
+        categorical_columns = [
+            'midas_iscontrol', 'midas_distance', 'midas_location', 'midas_path',
+            'midas_pathreport', 'midas_gender', 'midas_fitzpatrick', 'midas_melanoma',
+            'midas_ethnicity', 'midas_race'
         ]
-
+        
+        # Fit label encoders
+        for column in categorical_columns:
+            self.label_encoders[column] = LabelEncoder()
+            self.data[column] = self.data[column].fillna('Unknown')
+            self.label_encoders[column].fit(self.data[column])
+        
+        # Ensure numerical columns are filled
+        numerical_columns = ['length_(mm)', 'width_(mm)']
+        self.data[numerical_columns] = self.data[numerical_columns].fillna(0)
+    
     def __len__(self):
         return len(self.data)
-
+    
     def __getitem__(self, idx):
         # Load image
         img_path = self.data.iloc[idx]['midas_path']
-        
-        try:
-            image = Image.open(img_path).convert('RGB')
-        except FileNotFoundError:
-            print(f"Image file not found: {img_path}")
-            image = Image.new('RGB', (224, 224), color='gray')
+        if not os.path.isfile(img_path):
+            raise FileNotFoundError(f"Image file not found: {img_path}")
+
+        image = Image.open(img_path).convert('RGB')
         
         # Apply transformations to image
         if self.transform:
             image = self.transform(image)
-
-        # Load metadata
-        metadata = self.data.iloc[idx][self.metadata_keys].to_dict()
         
-        # Clean metadata by removing empty columns
-        cleaned_metadata = {key: value for key, value in metadata.items() if pd.notna(value)}
-
-        # Handle missing metadata values (if needed)
-        encoded_metadata = self.encode_metadata(cleaned_metadata)
-
+        # Encode metadata
+        metadata = {}
+        for column in self.label_encoders.keys():
+            try:
+                encoded_value = self.label_encoders[column].transform([self.data.iloc[idx][column]])[0]
+                metadata[column] = encoded_value
+            except KeyError:
+                metadata[column] = -1  # Handle missing or unrecognized values
+        
+        # Add numerical metadata
+        numerical_columns = ['length_(mm)', 'width_(mm)']
+        for column in numerical_columns:
+            metadata[column] = self.data.iloc[idx][column]
+        
         # Load label
         label = self.data.iloc[idx]['clinical_impression_1']
-
-        return image, encoded_metadata, label
-
-    def encode_metadata(self, metadata):
-        # Convert metadata to tensor, fill missing values with default value
-        default_value = 0.0
-        metadata_values = [metadata.get(key, default_value) for key in self.metadata_keys]
-        return torch.tensor(metadata_values, dtype=torch.float32)
+        
+        return image, metadata, label
 
 
 import torch
