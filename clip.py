@@ -128,7 +128,7 @@ for epoch in range(3):  # Loop over the dataset multiple times
         loss = criterion(logits_per_image, labels)
         
         # Add debugging prints
-        print(f"Epoch: {epoch+1}, Batch: {i+1}, Loss: {loss.item()}")
+        print(f"Epoch: {epoch+1}, Batch: {i+1}, Loss: {loss.item()}, Labels: {labels}")
         
         loss.backward()
         optimizer.step()
