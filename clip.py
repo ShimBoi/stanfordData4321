@@ -37,6 +37,7 @@ transform = transforms.Compose([
 class ExcelImageTextDataset(Dataset):
     def __init__(self, excel_file, root_dirs, transform=None):
         self.data_frame = pd.read_excel(excel_file)
+        self.data_frame = self.data_frame.dropna(subset=['clinical_impression_1', 'midas_file_name'])
         self.data_frame.iloc[:, 0] = self.data_frame.iloc[:, 0].astype(str)
         self.root_dirs = root_dirs
         self.transform = transform
