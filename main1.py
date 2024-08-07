@@ -141,8 +141,39 @@ save_augmented_images(dataset, output_dir, num_augmentations=5)
 # Check if augmented images are saved correctly
 print(f"Total augmented images: {sum([len(files) for r, d, files in os.walk(output_dir)])}")
 
-# Load the augmented dataset
-augmented_dataset = ExcelImageDataset(excel_file_path, [output_dir], transform)
+# Function to load both original and augmented images
+class AugmentedImageDataset(Dataset):
+    def __init__(self, original_dataset, augmented_dir, transform=None):
+        self.original_dataset = original_dataset
+        self.augmented_dir = augmented_dir
+        self.transform = transform
+        self.augmented_paths = self._get_augmented_paths()
+
+    def _get_augmented_paths(self):
+        augmented_paths = []
+        for root, _, files in os.walk(self.augmented_dir):
+            for file in files:
+                if file.endswith(".png"):
+                    img_path = os.path.join(root, file)
+                    label = int(os.path.basename(root))
+                    augmented_paths.append((img_path, label))
+        return augmented_paths
+
+    def __len__(self):
+        return len(self.original_dataset) + len(self.augmented_paths)
+
+    def __getitem__(self, idx):
+        if idx < len(self.original_dataset):
+            return self.original_dataset[idx]
+        else:
+            img_path, label = self.augmented_paths[idx - len(self.original_dataset)]
+            image = Image.open(img_path).convert("RGB")
+            if self.transform:
+                image = self.transform(image)
+            return image, torch.tensor(label, dtype=torch.long)
+
+# Create the combined dataset
+augmented_dataset = AugmentedImageDataset(dataset, output_dir, transform)
 print(f"Total images in augmented dataset: {len(augmented_dataset)}")
 
 train_size = int(0.8 * len(augmented_dataset))
