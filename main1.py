@@ -2,9 +2,10 @@ import os
 import torch
 import torchvision.transforms as transforms
 from torch.utils.data import DataLoader, Dataset, random_split
+from torch import nn, optim
+from torchvision import models
 from PIL import Image
 import pandas as pd
-import numpy as np
 import matplotlib.pyplot as plt
 from pytorch_grad_cam import GradCAM
 from pytorch_grad_cam.utils.image import show_cam_on_image
@@ -29,21 +30,25 @@ augmentation_transforms = transforms.Compose([
     transforms.RandomResizedCrop(224)
 ])
 
-class AugmentedImageDataset(Dataset):
-    def __init__(self, image_dir, transform=None):
-        self.image_dir = image_dir
+# Define the ExcelImageDataset class
+class ExcelImageDataset(Dataset):
+    def __init__(self, excel_file_path, root_dirs, transform=None):
+        self.excel_file_path = excel_file_path
+        self.root_dirs = root_dirs
         self.transform = transform
-        self.image_paths, self.labels = self._get_image_paths_and_labels()
+        self.image_paths, self.labels = self._load_data_from_excel()
 
-    def _get_image_paths_and_labels(self):
+    def _load_data_from_excel(self):
+        df = pd.read_excel(self.excel_file_path)
         image_paths = []
         labels = []
-        for label_dir in os.listdir(self.image_dir):
-            label_dir_path = os.path.join(self.image_dir, label_dir)
-            if os.path.isdir(label_dir_path):
-                for img_name in os.listdir(label_dir_path):
-                    image_paths.append(os.path.join(label_dir_path, img_name))
-                    labels.append(int(label_dir))
+        for _, row in df.iterrows():
+            for root_dir in self.root_dirs:
+                image_path = os.path.join(root_dir, row['image_name'])
+                if os.path.exists(image_path):
+                    image_paths.append(image_path)
+                    labels.append(row['label'])
+                    break
         print(f"Total valid paths found: {len(image_paths)}")
         return image_paths, labels
 
@@ -74,7 +79,7 @@ def save_augmented_images(dataset, output_dir, num_augmentations=5):
             augmented_img.save(os.path.join(label_dir, f"{idx}_aug_{i}.png"))
 
 # Load the dataset
-excel_file_path = './dataRef/release_midas.xlsx'
+excel_file_path = '/content/drive/MyDrive/midasmultimodalimagedatasetforaibasedskincancer/release_midas.xlsx'
 root_dirs = [
     '/root/stanfordData4321/stanfordData4321/images2',
     '/root/stanfordData4321/stanfordData4321/images1',
