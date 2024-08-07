@@ -40,14 +40,13 @@ transform = transforms.Compose([
     transforms.Normalize((0.5,), (0.5,))
 ])
 
-# Define the transformation pipeline with data augmentation
+# Define the augmentation pipeline
 augmentation_transforms = transforms.Compose([
-    transforms.RandomResizedCrop(img_size),  # Randomly crop the image and resize it to the specified size
-    transforms.RandomHorizontalFlip(),  # Randomly flip the image horizontally
-    transforms.RandomVerticalFlip(),  # Randomly flip the image vertically
-    transforms.RandomRotation(10),  # Randomly rotate the image by up to 10 degrees
-    transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.2),  # Randomly change brightness, contrast, saturation, and hue
-    transforms.ToTensor()
+    transforms.RandomResizedCrop(img_size),
+    transforms.RandomHorizontalFlip(),
+    transforms.RandomVerticalFlip(),
+    transforms.RandomRotation(10),
+    transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.2)
 ])
 
 def imshow(img):
@@ -123,8 +122,10 @@ def save_augmented_images(dataset, output_dir, num_augmentations=5):
         save_image(img, original_img_path)
         
         # Generate and save augmented images
+        pil_img = transforms.ToPILImage()(img)  # Convert tensor to PIL Image
         for aug_idx in range(num_augmentations):
-            augmented_img = augmentation_transforms(img)
+            augmented_img = augmentation_transforms(pil_img)  # Apply augmentation
+            augmented_img = transform(augmented_img)  # Convert to tensor and normalize
             augmented_img_path = os.path.join(label_dir, f"{idx}_aug_{aug_idx}.png")
             save_image(augmented_img, augmented_img_path)
 
