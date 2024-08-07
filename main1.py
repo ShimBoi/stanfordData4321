@@ -15,6 +15,9 @@ from pytorch_grad_cam.utils.image import show_cam_on_image
 
 # Print the current working directory
 print("Current working directory:", os.getcwd())
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+net.to(device)
+print(device)
 
 # Load the Excel file
 excel_file_path = './dataRef/release_midas.xlsx'
