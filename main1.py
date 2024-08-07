@@ -136,7 +136,7 @@ output_dir = './augmented_images'
 save_augmented_images(dataset, output_dir, num_augmentations=5)
 
 # Check if augmented images are saved correctly
-print(f"Total augmented images: {len(os.listdir(output_dir))}")
+print(f"Total augmented images: {sum([len(files) for r, d, files in os.walk(output_dir)])}")
 
 # Load the augmented dataset
 augmented_dataset = ExcelImageDataset(excel_file_path, [output_dir], transform)
@@ -144,7 +144,12 @@ print(f"Total images in augmented dataset: {len(augmented_dataset)}")
 
 train_size = int(0.8 * len(augmented_dataset))
 test_size = len(augmented_dataset) - train_size
+
+print(f"Train size: {train_size}, Test size: {test_size}")
+
 train_dataset, test_dataset = random_split(augmented_dataset, [train_size, test_size])
+
+print(f"Train dataset length: {len(train_dataset)}, Test dataset length: {len(test_dataset)}")
 
 train_loader = DataLoader(train_dataset, batch_size=4, shuffle=True)
 test_loader = DataLoader(test_dataset, batch_size=4, shuffle=False)
@@ -218,7 +223,7 @@ def get_grad_cam_explanation(vision_model, image, target_layer):
 
 # Example usage
 target_layer = net.layer4[-1].conv2  # Adjust target layer
-sample_image, _ = dataset[0]
+sample_image, _ = augmented_dataset[0]
 sample_image = sample_image.to(device)
 cam_image = get_grad_cam_explanation(net, sample_image, target_layer)
 
