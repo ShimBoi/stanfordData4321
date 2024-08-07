@@ -4,14 +4,14 @@ import torch.nn as nn
 import torch.optim as optim
 import torchvision.transforms as transforms
 import torchvision.models as models
-from torch.utils.data import DataLoader, Dataset, random_split, WeightedRandomSampler
+from torch.utils.data import DataLoader, Dataset, random_split
+from torchvision.utils import save_image
 from PIL import Image
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 from pytorch_grad_cam import GradCAM
 from pytorch_grad_cam.utils.image import show_cam_on_image
-import cv2
 
 # Print the current working directory
 print("Current working directory:", os.getcwd())
@@ -33,14 +33,21 @@ categories = ['7-malignant-bcc', '1-benign-melanocytic nevus', '6-benign-other',
               '12-malignant-other']
 img_size = 224
 
-# Compose the transformation pipeline with data augmentation
+# Compose the transformation pipeline
 transform = transforms.Compose([
     transforms.Resize((img_size, img_size)),
-    transforms.RandomHorizontalFlip(),
-    transforms.RandomVerticalFlip(),
-    transforms.RandomRotation(20),
     transforms.ToTensor(),
     transforms.Normalize((0.5,), (0.5,))
+])
+
+# Define the transformation pipeline with data augmentation
+augmentation_transforms = transforms.Compose([
+    transforms.RandomResizedCrop(img_size),  # Randomly crop the image and resize it to the specified size
+    transforms.RandomHorizontalFlip(),  # Randomly flip the image horizontally
+    transforms.RandomVerticalFlip(),  # Randomly flip the image vertically
+    transforms.RandomRotation(10),  # Randomly rotate the image by up to 10 degrees
+    transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.2),  # Randomly change brightness, contrast, saturation, and hue
+    transforms.ToTensor()
 ])
 
 def imshow(img):
@@ -100,60 +107,60 @@ root_dirs = [
     '/root/stanfordData4321/stanfordData4321/images4'
 ]
 
-# Create dataset and split it
+# Save augmented images
+def save_augmented_images(dataset, output_dir, num_augmentations=5):
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+    
+    for idx in range(len(dataset)):
+        img, label = dataset[idx]
+        label_dir = os.path.join(output_dir, str(label.item()))
+        if not os.path.exists(label_dir):
+            os.makedirs(label_dir)
+        
+        # Save the original image
+        original_img_path = os.path.join(label_dir, f"{idx}_original.png")
+        save_image(img, original_img_path)
+        
+        # Generate and save augmented images
+        for aug_idx in range(num_augmentations):
+            augmented_img = augmentation_transforms(img)
+            augmented_img_path = os.path.join(label_dir, f"{idx}_aug_{aug_idx}.png")
+            save_image(augmented_img, augmented_img_path)
+
+# Create dataset and save augmented images
 dataset = ExcelImageDataset(excel_file_path, root_dirs, transform)
-train_size = int(0.8 * len(dataset))
-test_size = len(dataset) - train_size
-train_dataset, test_dataset = random_split(dataset, [train_size, test_size])
+output_dir = './augmented_images'
+save_augmented_images(dataset, output_dir, num_augmentations=5)
 
-# Compute class weights for imbalanced dataset
-class_counts = df['clinical_impression_1'].map(dataset.label_map).value_counts().to_dict()
-print("Class counts:", class_counts)  # Debug print
-print("Label map:", dataset.label_map)  # Debug print
+# Load the augmented dataset
+augmented_dataset = ExcelImageDataset(excel_file_path, [output_dir], transform)
+train_size = int(0.8 * len(augmented_dataset))
+test_size = len(augmented_dataset) - train_size
+train_dataset, test_dataset = random_split(augmented_dataset, [train_size, test_size])
 
-# Ensure class_weights use correct keys from label_map
-class_weights = {idx: 1.0/count for label, idx in dataset.label_map.items() if label in class_counts for count in [class_counts[label]]}
-print("Class weights:", class_weights)  # Debug print
-
-train_weights = [class_weights[label.item()] for _, label in train_dataset]
-train_sampler = WeightedRandomSampler(train_weights, len(train_weights))
-
-# Create data loaders
-train_loader = DataLoader(train_dataset, batch_size=4, sampler=train_sampler)
+train_loader = DataLoader(train_dataset, batch_size=4, shuffle=True)
 test_loader = DataLoader(test_dataset, batch_size=4, shuffle=False)
 
 # Load pre-trained model and modify the final layer
 weights = models.ResNet18_Weights.DEFAULT
 net = models.resnet18(weights=weights)
 num_ftrs = net.fc.in_features
-net.fc = nn.Sequential(
-    nn.Dropout(0.5),
-    nn.Linear(num_ftrs, len(categories))
-)
-
-# Fine-tune more layers
-for param in net.parameters():
-    param.requires_grad = False
-for param in net.layer4.parameters():
-    param.requires_grad = True
-for param in net.fc.parameters():
-    param.requires_grad = True
+net.fc = nn.Linear(num_ftrs, len(categories))
 
 # Move the model to GPU
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 net.to(device)
 print(device)
 
-# Define loss function and optimizer with learning rate scheduler
+# Define loss function and optimizer
 criterion = nn.CrossEntropyLoss()
-optimizer = optim.SGD(net.parameters(), lr=0.01, momentum=0.9)
-scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=7, gamma=0.1)
+optimizer = optim.SGD(net.parameters(), lr=0.1, momentum=0.9)
 
 # Training loop
-num_epochs = 50
-for epoch in range(num_epochs):  # Loop over the dataset multiple times
+for epoch in range(15):  # Loop over the dataset multiple times
     running_loss = 0.0
-    print(f"Epoch {epoch+1}")
+    print(epoch)
     for i, data in enumerate(train_loader, 0):
         # Get the inputs and move them to GPU
         inputs, labels = data
@@ -170,13 +177,14 @@ for epoch in range(num_epochs):  # Loop over the dataset multiple times
 
         # Print statistics
         running_loss += loss.item()
-    scheduler.step()
-    print(f"Epoch {epoch+1}, Loss: {running_loss/len(train_loader)}")
+        if i % 2000 == 1999:  # Print every 2000 mini-batches
+            print(f"[{epoch + 1}, {i + 1}] loss: {running_loss / 2000:.3f}")
+            running_loss = 0.0
 
 print("Finished Training")
 
 # Save the trained model
-PATH = './cifar_net.pth'
+PATH = './resnet18_model.pth'
 torch.save(net.state_dict(), PATH)
 
 # Test the model
