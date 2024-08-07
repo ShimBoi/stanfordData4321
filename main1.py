@@ -83,6 +83,7 @@ class ExcelImageDataset(Dataset):
                     break
             if not img_found:
                 print(f"Warning: Image {row['midas_file_name']} not found in any root directory.")
+        print(f"Total valid paths found: {len(valid_paths)}")
         return valid_paths
 
     def __len__(self):
@@ -134,8 +135,13 @@ dataset = ExcelImageDataset(excel_file_path, root_dirs, transform)
 output_dir = './augmented_images'
 save_augmented_images(dataset, output_dir, num_augmentations=5)
 
+# Check if augmented images are saved correctly
+print(f"Total augmented images: {len(os.listdir(output_dir))}")
+
 # Load the augmented dataset
 augmented_dataset = ExcelImageDataset(excel_file_path, [output_dir], transform)
+print(f"Total images in augmented dataset: {len(augmented_dataset)}")
+
 train_size = int(0.8 * len(augmented_dataset))
 test_size = len(augmented_dataset) - train_size
 train_dataset, test_dataset = random_split(augmented_dataset, [train_size, test_size])
