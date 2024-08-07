@@ -15,6 +15,7 @@ from pytorch_grad_cam.utils.image import show_cam_on_image
 
 # Print the current working directory
 print("Current working directory:", os.getcwd())
+net = models.resnet18(weights=weights)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 net.to(device)
 print(device)
