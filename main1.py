@@ -42,68 +42,146 @@ transform = transforms.Compose([
     transforms.Normalize((0.5,), (0.5,))
 ])
 
+# Define the augmentation pipeline
+augmentation_transforms = transforms.Compose([
+    transforms.RandomResizedCrop(img_size),
+    transforms.RandomHorizontalFlip(),
+    transforms.RandomVerticalFlip(),
+    transforms.RandomRotation(10),
+    transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.2)
+])
+
 def imshow(img):
     img = img / 2 + 0.5
     npimg = img.cpu().numpy()  # Ensure tensor is moved to CPU
     plt.imshow(np.transpose(npimg, (1, 2, 0)))
     plt.show()
 
-class ImageDataset(Dataset):
-    def __init__(self, image_paths, transform=None):
-        self.image_paths = image_paths
+class ExcelImageDataset(Dataset):
+    def __init__(self, excel_file, root_dirs, transform=None):
+        self.data_frame = pd.read_excel(excel_file)
+        self.data_frame.iloc[:, 0] = self.data_frame.iloc[:, 0].astype(str)
+        self.root_dirs = root_dirs
         self.transform = transform
+
+        # Ensure the label categories are consistent with the provided categories
+        self.label_map = {label: idx for idx, label in enumerate(categories)}
+
+        self.image_paths = self._get_image_paths()
+
+    def _get_image_paths(self):
+        valid_paths = []
+        for idx, row in self.data_frame.iterrows():
+            img_found = False
+            for root_dir in self.root_dirs:
+                img_name = os.path.join(root_dir, row['midas_file_name'])
+                if os.path.isfile(img_name):
+                    label = row['clinical_impression_1']
+                    if label not in self.label_map:
+                        print(f"Warning: Label '{label}' not in label_map.")
+                        continue
+                    valid_paths.append((img_name, label))
+                    img_found = True
+                    break
+            if not img_found:
+                print(f"Warning: Image {row['midas_file_name']} not found in any root directory.")
+        print(f"Total valid paths found: {len(valid_paths)}")
+        return valid_paths
 
     def __len__(self):
         return len(self.image_paths)
 
     def __getitem__(self, idx):
-        img_path, label = self.image_paths[idx]
-        image = Image.open(img_path).convert("RGB")
+        img_name, label = self.image_paths[idx]
+        image = Image.open(img_name).convert("RGB")
         if self.transform:
             image = self.transform(image)
-        label = torch.tensor(label, dtype=torch.long)
+
+        # Convert label to tensor with encoding
+        label = torch.tensor(self.label_map.get(label, -1), dtype=torch.long)
         return image, label
 
-# Load image paths from the original and augmented directories
-def load_image_paths(root_dirs, df, label_map):
-    image_paths = []
-    for idx, row in df.iterrows():
-        img_name = row['midas_file_name']
-        label = row['clinical_impression_1']
-        if label not in label_map:
-            continue
-        for root_dir in root_dirs:
-            img_path = os.path.join(root_dir, img_name)
-            if os.path.isfile(img_path):
-                image_paths.append((img_path, label_map[label]))
-                break
-    return image_paths
-
-# Define the root directories for original and augmented images
+# Define the root directories
 root_dirs = [
     '/root/stanfordData4321/stanfordData4321/images2',
     '/root/stanfordData4321/stanfordData4321/images1',
     '/root/stanfordData4321/stanfordData4321/images3',
-    '/root/stanfordData4321/stanfordData4321/images4',
-    './augmented_images'  # Directory containing the augmented images
+    '/root/stanfordData4321/stanfordData4321/images4'
 ]
 
-label_map = {label: idx for idx, label in enumerate(categories)}
-image_paths = load_image_paths(root_dirs, df, label_map)
+# Save augmented images
+def save_augmented_images(dataset, output_dir, num_augmentations=5):
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+    
+    for idx in range(len(dataset)):
+        img, label = dataset[idx]
+        label_dir = os.path.join(output_dir, str(label.item()))
+        if not os.path.exists(label_dir):
+            os.makedirs(label_dir)
+        
+        # Save the original image
+        original_img_path = os.path.join(label_dir, f"{idx}_original.png")
+        save_image(img, original_img_path)
+        
+        # Generate and save augmented images
+        pil_img = transforms.ToPILImage()(img)  # Convert tensor to PIL Image
+        for aug_idx in range(num_augmentations):
+            augmented_img = augmentation_transforms(pil_img)  # Apply augmentation
+            augmented_img = transform(augmented_img)  # Convert to tensor and normalize
+            augmented_img_path = os.path.join(label_dir, f"{idx}_aug_{aug_idx}.png")
+            save_image(augmented_img, augmented_img_path)
 
-print(f"Total images found: {len(image_paths)}")
+# Create dataset and save augmented images
+dataset = ExcelImageDataset(excel_file_path, root_dirs, transform)
+print(f"Dataset length before augmentation: {len(dataset)}")
+output_dir = './augmented_images'
+save_augmented_images(dataset, output_dir, num_augmentations=5)
 
-# Create dataset
-dataset = ImageDataset(image_paths, transform)
-print(f"Dataset length: {len(dataset)}")
+# Check if augmented images are saved correctly
+print(f"Total augmented images: {sum([len(files) for r, d, files in os.walk(output_dir)])}")
 
-# Split dataset into train and test sets
-train_size = int(0.8 * len(dataset))
-test_size = len(dataset) - train_size
+# Function to load both original and augmented images
+class AugmentedImageDataset(Dataset):
+    def __init__(self, original_dataset, augmented_dir, transform=None):
+        self.original_dataset = original_dataset
+        self.augmented_dir = augmented_dir
+        self.transform = transform
+        self.augmented_paths = self._get_augmented_paths()
+
+    def _get_augmented_paths(self):
+        augmented_paths = []
+        for root, _, files in os.walk(self.augmented_dir):
+            for file in files:
+                if file.endswith(".png"):
+                    img_path = os.path.join(root, file)
+                    label = int(os.path.basename(root))
+                    augmented_paths.append((img_path, label))
+        return augmented_paths
+
+    def __len__(self):
+        return len(self.original_dataset) + len(self.augmented_paths)
+
+    def __getitem__(self, idx):
+        if idx < len(self.original_dataset):
+            return self.original_dataset[idx]
+        else:
+            img_path, label = self.augmented_paths[idx - len(self.original_dataset)]
+            image = Image.open(img_path).convert("RGB")
+            if self.transform:
+                image = self.transform(image)
+            return image, torch.tensor(label, dtype=torch.long)
+
+# Create the combined dataset
+augmented_dataset = AugmentedImageDataset(dataset, output_dir, transform)
+print(f"Total images in augmented dataset: {len(augmented_dataset)}")
+
+train_size = int(0.8 * len(augmented_dataset))
+test_size = len(augmented_dataset) - train_size
 
 print(f"Train size: {train_size}, Test size: {test_size}")
 
-train_dataset, test_dataset = random_split(dataset, [train_size, test_size])
+train_dataset, test_dataset = random_split(augmented_dataset, [train_size, test_size])
 
 print(f"Train dataset length: {len(train_dataset)}, Test dataset length: {len(test_dataset)}")
 
@@ -179,7 +257,7 @@ def get_grad_cam_explanation(vision_model, image, target_layer):
 
 # Example usage
 target_layer = net.layer4[-1].conv2  # Adjust target layer
-sample_image, _ = dataset[0]
+sample_image, _ = augmented_dataset[0]
 sample_image = sample_image.to(device)
 cam_image = get_grad_cam_explanation(net, sample_image, target_layer)
 
