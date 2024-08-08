@@ -143,7 +143,7 @@ def objective(trial: Trial):
     optimizer = optim.SGD(net.parameters(), lr=lr, momentum=momentum)
     
     # Training loop
-    for epoch in range(15):  # Loop over the dataset multiple times
+    for epoch in range(5):  # Loop over the dataset multiple times
         net.train()
         running_loss = 0.0
         for i, data in enumerate(train_loader, 0):
@@ -211,7 +211,7 @@ criterion = nn.CrossEntropyLoss()
 optimizer = optim.SGD(net.parameters(), lr=best_lr, momentum=best_momentum)
 
 # Training loop with the best hyperparameters
-for epoch in range(15):  # Loop over the dataset multiple times
+for epoch in range(3):  # Loop over the dataset multiple times
     running_loss = 0.0
     print(epoch)
     for i, data in enumerate(train_loader, 0):
