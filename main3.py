@@ -5,16 +5,11 @@ import torch.optim as optim
 import torchvision.transforms as transforms
 import torchvision.models as models
 from torch.utils.data import DataLoader, Dataset, random_split
-from torchvision.utils import save_image
 from PIL import Image
 import pandas as pd
-import numpy as np
 import matplotlib.pyplot as plt
 from pytorch_grad_cam import GradCAM
 from pytorch_grad_cam.utils.image import show_cam_on_image
-
-# Print the current working directory
-print("Current working directory:", os.getcwd())
 
 # Load the Excel file
 excel_file_path = './dataRef/release_midas.xlsx'
@@ -42,12 +37,6 @@ transform = transforms.Compose([
     transforms.Normalize((0.5,), (0.5,))
 ])
 
-def imshow(img):
-    img = img / 2 + 0.5
-    npimg = img.cpu().numpy()  # Ensure tensor is moved to CPU
-    plt.imshow(np.transpose(npimg, (1, 2, 0)))
-    plt.show()
-
 class ImageDataset(Dataset):
     def __init__(self, image_paths, transform=None):
         self.image_paths = image_paths
@@ -64,8 +53,8 @@ class ImageDataset(Dataset):
         label = torch.tensor(label, dtype=torch.long)
         return image, label
 
-# Load image paths from the original and augmented directories
-def load_image_paths(root_dirs, df, label_map):
+# Load image paths from the original directories
+def load_original_image_paths(df, root_dirs, label_map):
     image_paths = []
     for idx, row in df.iterrows():
         img_name = row['midas_file_name']
@@ -79,22 +68,42 @@ def load_image_paths(root_dirs, df, label_map):
                 break
     return image_paths
 
-# Define the root directories for original and augmented images
+# Load augmented images from the directory
+def load_augmented_image_paths(augmented_dir, label_map):
+    image_paths = []
+    for root, _, files in os.walk(augmented_dir):
+        for file in files:
+            if file.endswith('.png'):
+                label = int(os.path.basename(root))
+                img_path = os.path.join(root, file)
+                if label in label_map.values():
+                    image_paths.append((img_path, label))
+    return image_paths
+
+# Define the root directories for original images and augmented images
 root_dirs = [
     '/root/stanfordData4321/stanfordData4321/images2',
     '/root/stanfordData4321/stanfordData4321/images1',
     '/root/stanfordData4321/stanfordData4321/images3',
-    '/root/stanfordData4321/stanfordData4321/images4',
-    './augmented_images'  # Directory containing the augmented images
+    '/root/stanfordData4321/stanfordData4321/images4'
 ]
+augmented_dir = './augmented_images'  # Directory containing the augmented images
 
 label_map = {label: idx for idx, label in enumerate(categories)}
-image_paths = load_image_paths(root_dirs, df, label_map)
 
-print(f"Total images found: {len(image_paths)}")
+# Load original and augmented image paths
+original_image_paths = load_original_image_paths(df, root_dirs, label_map)
+augmented_image_paths = load_augmented_image_paths(augmented_dir, label_map)
+
+# Combine original and augmented image paths
+combined_image_paths = original_image_paths + augmented_image_paths
+
+print(f"Total original images: {len(original_image_paths)}")
+print(f"Total augmented images: {len(augmented_image_paths)}")
+print(f"Total images used in dataset: {len(combined_image_paths)}")
 
 # Create dataset
-dataset = ImageDataset(image_paths, transform)
+dataset = ImageDataset(combined_image_paths, transform)
 print(f"Dataset length: {len(dataset)}")
 
 # Split dataset into train and test sets
@@ -126,7 +135,7 @@ criterion = nn.CrossEntropyLoss()
 optimizer = optim.SGD(net.parameters(), lr=0.1, momentum=0.9)
 
 # Training loop
-for epoch in range(3):  # Loop over the dataset multiple times
+for epoch in range(15):  # Loop over the dataset multiple times
     running_loss = 0.0
     print(epoch)
     for i, data in enumerate(train_loader, 0):
