@@ -23,15 +23,13 @@ print("Excel file loaded. First few rows:")
 print(df.head())
 
 # Define categories and image size
-categories = [
-    '7-malignant-bcc', '1-benign-melanocytic nevus', '6-benign-other',
-    '14-other-non-neoplastic/inflammatory/infectious', '8-malignant-scc',
-    '9-malignant-sccis', '10-malignant-ak', '3-benign-fibrous papule',
-    '4-benign-dermatofibroma', '2-benign-seborrheic keratosis',
-    '5-benign-hemangioma', '11-malignant-melanoma',
-    '13-other-melanocytic lesion with possible re-excision (severe/spitz nevus, aimp)',
-    '12-malignant-other'
-]
+categories = ['7-malignant-bcc', '1-benign-melanocytic nevus', '6-benign-other',
+              '14-other-non-neoplastic/inflammatory/infectious', '8-malignant-scc',
+              '9-malignant-sccis', '10-malignant-ak', '3-benign-fibrous papule',
+              '4-benign-dermatofibroma', '2-benign-seborrheic keratosis',
+              '5-benign-hemangioma', '11-malignant-melanoma',
+              '13-other-melanocytic lesion with possible re-excision (severe/spitz nevus, aimp)',
+              '12-malignant-other']
 img_size = 224
 
 # Compose the transformation pipeline
@@ -154,7 +152,7 @@ print(device)
 # Define the objective function for Optuna
 def objective(trial):
     lr = trial.suggest_loguniform('lr', 1e-4, 1e-1)
-    momentum = trial.suggest_uniform('momentum', 0.7, 0.9)
+    momentum = trial.suggest_float('momentum', 0.7, 0.9)  # Updated to suggest_float
 
     # Define loss function and optimizer
     criterion = nn.CrossEntropyLoss(weight=class_weights)
@@ -208,6 +206,8 @@ print("Best hyperparameters: ", best_trial.params)
 lr = best_trial.params['lr']
 momentum = best_trial.params['momentum']
 optimizer = optim.SGD(net.parameters(), lr=lr, momentum=momentum)
+
+# Define loss function
 criterion = nn.CrossEntropyLoss(weight=class_weights)
 
 # Training loop with best parameters
@@ -244,34 +244,28 @@ with torch.no_grad():
         total += labels.size(0)
         correct += (predicted == labels).sum().item()
 
-print(f"Accuracy of the network: {100 * correct / total:.2f}%")
+print(f'Accuracy of the network on the test images: {100 * correct // total} %')
 
-# Grad-CAM visualization
-def visualize_gradcam(img_path, class_idx, model, transform):
-    image = Image.open(img_path).convert("RGB")
-    input_image = transform(image).unsqueeze(0).to(device)
-
+# Grad-CAM for interpretability
+def generate_gradcam(img, label, model):
     model.eval()
-    with torch.no_grad():
-        output = model(input_image)
-        pred_class = output.argmax(dim=1).item()
+    img_tensor = transform(img).unsqueeze(0).to(device)
+    target_class = torch.tensor([label]).to(device)
 
-    # Initialize GradCAM
-    grad_cam = GradCAM(model=model, target_layers=[model.layer4[-1]])
-
-    # Generate GradCAM
-    grayscale_cam = grad_cam(input_tensor=input_image, target_category=class_idx)
+    cam = GradCAM(model=model, target_layers=[model.layer4[-1]], use_cuda=device.type == 'cuda')
+    grayscale_cam = cam(input_tensor=img_tensor, targets=[target_class])
     grayscale_cam = grayscale_cam[0, :]
 
-    # Convert to numpy and show
-    image = np.array(image) / 255.0
-    cam_image = show_cam_on_image(image, grayscale_cam, use_rgb=True)
-    plt.imshow(cam_image)
-    plt.title(f'Grad-CAM for class: {categories[class_idx]}')
-    plt.axis('off')
-    plt.show()
+    img = np.array(img)
+    visualization = show_cam_on_image(img, grayscale_cam, use_rgb=True)
 
-# Example usage of Grad-CAM
-test_image_path = '/path/to/sample_image.png'  # Change to your test image path
-test_class_idx = 1  # Change to your test class index
-visualize_gradcam(test_image_path, test_class_idx, net, transform)
+    return visualization
+
+# Example: visualize Grad-CAM for the first image in the test set
+test_img, test_label = test_dataset[0]
+visualization = generate_gradcam(test_img, test_label.item(), net)
+
+# Display the Grad-CAM result
+plt.imshow(visualization)
+plt.axis('off')
+plt.show()
