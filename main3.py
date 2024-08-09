@@ -159,7 +159,7 @@ def objective(trial: Trial):
     optimizer = optim.SGD(net.parameters(), lr=lr, momentum=momentum)
     
     # Training loop
-    for epoch in range(15):
+    for epoch in range(5):
         net.train()
         running_loss = 0.0
         for i, data in enumerate(train_loader, 0):
@@ -195,7 +195,7 @@ def objective(trial: Trial):
 
 # Create a study and optimize the objective function
 study = optuna.create_study(direction="minimize", sampler=TPESampler())
-study.optimize(objective, n_trials=50)  # Adjust the number of trials
+study.optimize(objective, n_trials=1)  # Adjust the number of trials
 
 # Print the best hyperparameters
 print("Best trial:")
@@ -227,7 +227,7 @@ criterion = nn.CrossEntropyLoss(weight=class_weights)
 optimizer = optim.SGD(net.parameters(), lr=best_lr, momentum=best_momentum)
 
 # Training loop with the best hyperparameters
-for epoch in range(15):
+for epoch in range(3):
     running_loss = 0.0
     print(epoch)
     for i, data in enumerate(train_loader, 0):
