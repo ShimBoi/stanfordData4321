@@ -107,12 +107,13 @@ print(f"Total images used in dataset: {len(combined_image_paths)}")
 dataset = ImageDataset(combined_image_paths, transform)
 print(f"Dataset length: {len(dataset)}")
 
-# Calculate weights for each sample
+# Compute class weights globally
 labels = [label for _, label in combined_image_paths]
-class_counts = [labels.count(i) for i in range(len(categories))]
-weights = [1.0 / class_counts[label] for _, label in combined_image_paths]
+class_weights = compute_class_weight(class_weight='balanced', classes=list(label_map.values()), y=labels)
+class_weights = torch.tensor(class_weights, dtype=torch.float32)
 
-# Create a sampler
+# Create sampler
+weights = [class_weights[label] for _, label in combined_image_paths]
 sampler = WeightedRandomSampler(weights, len(weights))
 
 # Create DataLoader with sampler
@@ -134,12 +135,8 @@ def objective(trial: Trial):
     lr = trial.suggest_float("lr", 1e-5, 1e-1, log=True)
     momentum = trial.suggest_float("momentum", 0.5, 0.9)
     
-    # Compute class weights
-    class_weights = compute_class_weight(class_weight='balanced', classes=list(label_map.values()), y=labels)
-    class_weights = torch.tensor(class_weights, dtype=torch.float32).to(device)
-    
     # Define loss function with class weights
-    criterion = nn.CrossEntropyLoss(weight=class_weights)
+    criterion = nn.CrossEntropyLoss(weight=class_weights.to(device))
     
     # Create DataLoader with sampler
     train_loader = DataLoader(train_dataset, batch_size=4, sampler=sampler)
@@ -159,7 +156,7 @@ def objective(trial: Trial):
     optimizer = optim.SGD(net.parameters(), lr=lr, momentum=momentum)
     
     # Training loop
-    for epoch in range(5):
+    for epoch in range(15):
         net.train()
         running_loss = 0.0
         for i, data in enumerate(train_loader, 0):
@@ -223,13 +220,13 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 net.to(device)
 
 # Define loss function and optimizer with best hyperparameters
-criterion = nn.CrossEntropyLoss(weight=class_weights)
+criterion = nn.CrossEntropyLoss(weight=class_weights.to(device))
 optimizer = optim.SGD(net.parameters(), lr=best_lr, momentum=best_momentum)
 
-# Training loop with the best hyperparameters
-for epoch in range(3):
+# Training loop
+for epoch in range(15):
+    net.train()
     running_loss = 0.0
-    print(epoch)
     for i, data in enumerate(train_loader, 0):
         inputs, labels = data
         inputs, labels = inputs.to(device), labels.to(device)
