@@ -20,14 +20,18 @@ class CustomDataset(Dataset):
         # Map labels to numeric values
         self.label_map = {label: idx for idx, label in enumerate(self.data_frame['clinical_impression_1'].unique())}
         self.data_frame['label'] = self.data_frame['clinical_impression_1'].map(self.label_map)
+        
+        # Gather all image paths and labels
+        self.image_paths = [os.path.join(root_dir, img_name) for img_name in self.data_frame['midas_file_name']]
+        self.labels = self.data_frame['label'].tolist()
 
     def __len__(self):
-        return len(self.data_frame)
+        return len(self.image_paths)
     
     def __getitem__(self, idx):
-        img_name = os.path.join(self.root_dir, self.data_frame.iloc[idx, 2])  # Adjust the column index for image paths
-        image = Image.open(img_name).convert('RGB')
-        label = self.data_frame.iloc[idx, -1]  # Label column index
+        img_path = self.image_paths[idx]
+        image = Image.open(img_path).convert('RGB')
+        label = self.labels[idx]
         
         if self.transform:
             image = self.transform(image)
@@ -50,7 +54,7 @@ transform = transforms.Compose([
 ])
 
 # Load datasets
-dataset = CustomDataset(csv_file='/path/to/your/excel_file.xlsx', root_dir='/path/to/your/images', transform=transform)
+dataset = CustomDataset(csv_file='/root/stanfordData4321/stanfordData4321-1/dataRef/release_midas.xlsx', root_dir='/path/to/your/root_directory', transform=transform)
 
 # Get labels from dataset
 labels = [label for _, label in dataset]
