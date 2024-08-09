@@ -164,7 +164,7 @@ def objective(trial: Trial):
     optimizer = optim.SGD(net.parameters(), lr=lr, momentum=momentum)
     
     # Training loop
-    for epoch in range(15):
+    for epoch in range(1):
         net.train()
         running_loss = 0.0
         for i, data in enumerate(train_loader, 0):
