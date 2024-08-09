@@ -7,6 +7,8 @@ from torchvision import transforms, models
 from PIL import Image
 import os
 import optuna
+import cv2
+import matplotlib.pyplot as plt
 
 # Define your custom dataset class
 class CustomDataset(Dataset):
@@ -72,23 +74,66 @@ train_loader = DataLoader(dataset, batch_size=32, sampler=train_sampler, num_wor
 test_loader = DataLoader(dataset, batch_size=32, sampler=test_sampler, num_workers=4)
 
 # Define model
-def create_model(lr, momentum):
+def create_model():
     model = models.resnet18(pretrained=True)
     model.fc = torch.nn.Linear(model.fc.in_features, len(set(labels)))  # Adjust output layer
     return model
+
+# Grad-CAM implementation
+class GradCAM:
+    def __init__(self, model):
+        self.model = model
+        self.model.eval()
+        self.gradients = []
+        self.activations = []
+
+        def save_gradient(grad):
+            self.gradients.append(grad)
+
+        def save_activation(module, input, output):
+            self.activations.append(output)
+
+        self.model.layer4[1].register_forward_hook(save_activation)
+        self.model.layer4[1].register_backward_hook(save_gradient)
+    
+    def forward(self, input_tensor):
+        self.gradients = []
+        self.activations = []
+        return self.model(input_tensor)
+
+    def generate_cam(self, input_tensor, target_class):
+        self.model.zero_grad()
+        output = self.forward(input_tensor)
+        class_loss = output[0, target_class]
+        class_loss.backward()
+
+        gradients = self.gradients[0].cpu().data.numpy()[0]
+        activations = self.activations[0].cpu().data.numpy()[0]
+
+        weights = np.mean(gradients, axis=(1, 2))
+        cam = np.zeros(activations.shape[1:], dtype=np.float32)
+
+        for i, w in enumerate(weights):
+            cam += w * activations[i]
+
+        cam = np.maximum(cam, 0)
+        cam = cv2.resize(cam, (input_tensor.size(2), input_tensor.size(3)))
+        cam -= np.min(cam)
+        cam /= np.max(cam)
+        return cam
 
 # Objective function for Optuna
 def objective(trial):
     lr = trial.suggest_float('lr', 1e-4, 1e-1, log=True)
     momentum = trial.suggest_float('momentum', 0.7, 0.9)
 
-    model = create_model(lr, momentum)
+    model = create_model()
     criterion = torch.nn.CrossEntropyLoss()
     optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=momentum)
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model.to(device)
-    
+
     # Training loop
     model.train()
     for epoch in range(2):  # Adjust number of epochs as needed
@@ -113,6 +158,17 @@ def objective(trial):
             correct += (predicted == labels).sum().item()
     
     accuracy = correct / total
+
+    # Generate Grad-CAM
+    grad_cam = GradCAM(model)
+    sample_input, sample_label = next(iter(test_loader))
+    sample_input = sample_input[0].unsqueeze(0).to(device)
+    target_class = sample_label[0].item()
+    
+    cam = grad_cam.generate_cam(sample_input, target_class)
+    plt.imshow(cam, cmap='jet')
+    plt.show()
+
     return accuracy
 
 # Run Optuna optimization
@@ -127,7 +183,22 @@ print(f"  Params: {trial.params}")
 # Train final model with best parameters
 best_lr = trial.params['lr']
 best_momentum = trial.params['momentum']
-final_model = create_model(best_lr, best_momentum)
-# Train final model with best parameters (code similar to above training loop)
+final_model = create_model()
+criterion = torch.nn.CrossEntropyLoss()
+optimizer = torch.optim.SGD(final_model.parameters(), lr=best_lr, momentum=best_momentum)
+
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+final_model.to(device)
+
+# Training final model
+final_model.train()
+for epoch in range(2):  # Adjust number of epochs as needed
+    for inputs, labels in train_loader:
+        inputs, labels = inputs.to(device), labels.to(device)
+        optimizer.zero_grad()
+        outputs = final_model(inputs)
+        loss = criterion(outputs, labels)
+        loss.backward()
+        optimizer.step()
 
 print("Training complete.")
