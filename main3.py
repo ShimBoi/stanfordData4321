@@ -144,8 +144,13 @@ def objective(trial: Trial):
     criterion = nn.CrossEntropyLoss(weight=class_weights.to(device))
     
     # Create DataLoader with sampler
-    train_loader = DataLoader(train_dataset, batch_size=4, sampler=sampler)
-    test_loader = DataLoader(test_dataset, batch_size=4, shuffle=False)
+    batch_size = 4
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, sampler=sampler)
+    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
+    
+    # Print dataset lengths
+    print(f"Length of train_dataset: {len(train_dataset)}")
+    print(f"Length of test_dataset: {len(test_dataset)}")
     
     # Load pre-trained model and modify the final layer
     weights = models.ResNet18_Weights.DEFAULT
@@ -164,14 +169,17 @@ def objective(trial: Trial):
         net.train()
         running_loss = 0.0
         for i, data in enumerate(train_loader, 0):
-            inputs, labels = data
-            inputs, labels = inputs.to(device), labels.to(device)
-            optimizer.zero_grad()
-            outputs = net(inputs)
-            loss = criterion(outputs, labels)
-            loss.backward()
-            optimizer.step()
-            running_loss += loss.item()
+            try:
+                inputs, labels = data
+                inputs, labels = inputs.to(device), labels.to(device)
+                optimizer.zero_grad()
+                outputs = net(inputs)
+                loss = criterion(outputs, labels)
+                loss.backward()
+                optimizer.step()
+                running_loss += loss.item()
+            except Exception as e:
+                print(f"Error during training loop: {e}")
     
     # Validation loop
     net.eval()
@@ -180,19 +188,23 @@ def objective(trial: Trial):
     val_loss = 0.0
     with torch.no_grad():
         for data in test_loader:
-            images, labels = data
-            images, labels = images.to(device), labels.to(device)
-            outputs = net(images)
-            loss = criterion(outputs, labels)
-            val_loss += loss.item()
-            _, predicted = torch.max(outputs.data, 1)
-            total += labels.size(0)
-            correct += (predicted == labels).sum().item()
+            try:
+                images, labels = data
+                images, labels = images.to(device), labels.to(device)
+                outputs = net(images)
+                loss = criterion(outputs, labels)
+                val_loss += loss.item()
+                _, predicted = torch.max(outputs.data, 1)
+                total += labels.size(0)
+                correct += (predicted == labels).sum().item()
+            except Exception as e:
+                print(f"Error during validation loop: {e}")
     
     accuracy = 100 * correct / total
     val_loss /= len(test_loader)
     
     return val_loss  # or use -accuracy to maximize accuracy
+
 
 
 # Create a study and optimize the objective function
