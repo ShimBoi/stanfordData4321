@@ -12,6 +12,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from pytorch_grad_cam import GradCAM
 from pytorch_grad_cam.utils.image import show_cam_on_image
+from collections import Counter
 
 # Print the current working directory
 print("Current working directory:", os.getcwd())
@@ -114,6 +115,10 @@ def save_augmented_images(dataset, output_dir, num_augmentations=5):
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
     
+    # Count the number of images per label in the original dataset
+    label_counts = Counter(label for _, label in dataset)
+    max_count = max(label_counts.values())
+
     for idx in range(len(dataset)):
         img, label = dataset[idx]
         label_dir = os.path.join(output_dir, str(label.item()))
@@ -124,13 +129,15 @@ def save_augmented_images(dataset, output_dir, num_augmentations=5):
         original_img_path = os.path.join(label_dir, f"{idx}_original.png")
         save_image(img, original_img_path)
         
-        # Generate and save augmented images
+        # Generate and save augmented images until the count matches the maximum
         pil_img = transforms.ToPILImage()(img)  # Convert tensor to PIL Image
-        for aug_idx in range(num_augmentations):
+        num_generated = len([f for f in os.listdir(label_dir) if f.endswith('.png')])
+        while num_generated < max_count:
             augmented_img = augmentation_transforms(pil_img)  # Apply augmentation
             augmented_img = transform(augmented_img)  # Convert to tensor and normalize
-            augmented_img_path = os.path.join(label_dir, f"{idx}_aug_{aug_idx}.png")
+            augmented_img_path = os.path.join(label_dir, f"{idx}_aug_{num_generated}.png")
             save_image(augmented_img, augmented_img_path)
+            num_generated += 1
 
 # Create dataset and save augmented images
 dataset = ExcelImageDataset(excel_file_path, root_dirs, transform)
