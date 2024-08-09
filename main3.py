@@ -4,12 +4,10 @@ import torch.nn as nn
 import torch.optim as optim
 import torchvision.transforms as transforms
 import torchvision.models as models
-from torch.utils.data import DataLoader, Dataset, random_split
+from torch.utils.data import DataLoader, Dataset, random_split, WeightedRandomSampler
 from PIL import Image
 import pandas as pd
-import matplotlib.pyplot as plt
-from pytorch_grad_cam import GradCAM
-from pytorch_grad_cam.utils.image import show_cam_on_image
+from sklearn.utils.class_weight import compute_class_weight
 import optuna
 from optuna import Trial
 from optuna.samplers import TPESampler
@@ -109,6 +107,17 @@ print(f"Total images used in dataset: {len(combined_image_paths)}")
 dataset = ImageDataset(combined_image_paths, transform)
 print(f"Dataset length: {len(dataset)}")
 
+# Calculate weights for each sample
+labels = [label for _, label in combined_image_paths]
+class_counts = [labels.count(i) for i in range(len(categories))]
+weights = [1.0 / class_counts[label] for _, label in combined_image_paths]
+
+# Create a sampler
+sampler = WeightedRandomSampler(weights, len(weights))
+
+# Create DataLoader with sampler
+train_loader = DataLoader(dataset, batch_size=4, sampler=sampler)
+
 # Split dataset into train and test sets
 train_size = int(0.8 * len(dataset))
 test_size = len(dataset) - train_size
@@ -125,7 +134,15 @@ def objective(trial: Trial):
     lr = trial.suggest_float("lr", 1e-5, 1e-1, log=True)
     momentum = trial.suggest_float("momentum", 0.5, 0.9)
     
-    train_loader = DataLoader(train_dataset, batch_size=4, shuffle=True)
+    # Compute class weights
+    class_weights = compute_class_weight(class_weight='balanced', classes=list(label_map.values()), y=labels)
+    class_weights = torch.tensor(class_weights, dtype=torch.float32).to(device)
+    
+    # Define loss function with class weights
+    criterion = nn.CrossEntropyLoss(weight=class_weights)
+    
+    # Create DataLoader with sampler
+    train_loader = DataLoader(train_dataset, batch_size=4, sampler=sampler)
     test_loader = DataLoader(test_dataset, batch_size=4, shuffle=False)
     
     # Load pre-trained model and modify the final layer
@@ -138,12 +155,11 @@ def objective(trial: Trial):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     net.to(device)
     
-    # Define loss function and optimizer with hyperparameters
-    criterion = nn.CrossEntropyLoss()
+    # Define optimizer with hyperparameters
     optimizer = optim.SGD(net.parameters(), lr=lr, momentum=momentum)
     
     # Training loop
-    for epoch in range(15):  # Loop over the dataset multiple times
+    for epoch in range(15):
         net.train()
         running_loss = 0.0
         for i, data in enumerate(train_loader, 0):
@@ -193,7 +209,7 @@ for key, value in trial.params.items():
 best_lr = trial.params['lr']
 best_momentum = trial.params['momentum']
 
-train_loader = DataLoader(train_dataset, batch_size=4, shuffle=True)
+train_loader = DataLoader(train_dataset, batch_size=4, sampler=sampler)
 test_loader = DataLoader(test_dataset, batch_size=4, shuffle=False)
 
 # Load pre-trained model and modify the final layer
@@ -207,11 +223,11 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 net.to(device)
 
 # Define loss function and optimizer with best hyperparameters
-criterion = nn.CrossEntropyLoss()
+criterion = nn.CrossEntropyLoss(weight=class_weights)
 optimizer = optim.SGD(net.parameters(), lr=best_lr, momentum=best_momentum)
 
 # Training loop with the best hyperparameters
-for epoch in range(15):  # Loop over the dataset multiple times
+for epoch in range(15):
     running_loss = 0.0
     print(epoch)
     for i, data in enumerate(train_loader, 0):
@@ -223,26 +239,24 @@ for epoch in range(15):  # Loop over the dataset multiple times
         loss.backward()
         optimizer.step()
         running_loss += loss.item()
-        if i % 2000 == 1999:  # Print every 2000 mini-batches
-            print(f"[{epoch + 1}, {i + 1}] loss: {running_loss / 2000:.3f}")
-            running_loss = 0.0
-
-print("Finished Training")
-
-# Save the trained model
-PATH = './resnet18_model.pth'
-torch.save(net.state_dict(), PATH)
-
-# Test the model
-correct = 0
-total = 0
-with torch.no_grad():
-    for data in test_loader:
-        images, labels = data
-        images, labels = images.to(device), labels.to(device)
-        outputs = net(images)
-        _, predicted = torch.max(outputs.data, 1)
-        total += labels.size(0)
-        correct += (predicted == labels).sum().item()
-
-print(f"Accuracy of the network on the {total} test images: {100 * correct / total}%")
+    
+    # Validation loop
+    net.eval()
+    correct = 0
+    total = 0
+    val_loss = 0.0
+    with torch.no_grad():
+        for data in test_loader:
+            images, labels = data
+            images, labels = images.to(device), labels.to(device)
+            outputs = net(images)
+            loss = criterion(outputs, labels)
+            val_loss += loss.item()
+            _, predicted = torch.max(outputs.data, 1)
+            total += labels.size(0)
+            correct += (predicted == labels).sum().item()
+    
+    accuracy = 100 * correct / total
+    val_loss /= len(test_loader)
+    
+    print(f'Epoch [{epoch+1}/15] - Loss: {running_loss/len(train_loader):.4f}, Val Loss: {val_loss:.4f}, Accuracy: {accuracy:.2f}%')
