@@ -133,6 +133,9 @@ print(f"Train dataset length: {len(train_dataset)}, Test dataset length: {len(te
 
 # Define the objective function for Optuna
 def objective(trial: Trial):
+    # Define the device
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    
     # Hyperparameters to tune
     lr = trial.suggest_float("lr", 1e-5, 1e-1, log=True)
     momentum = trial.suggest_float("momentum", 0.5, 0.9)
@@ -151,7 +154,6 @@ def objective(trial: Trial):
     net.fc = nn.Linear(num_ftrs, len(categories))
 
     # Move the model to GPU
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     net.to(device)
     
     # Define optimizer with hyperparameters
@@ -191,6 +193,7 @@ def objective(trial: Trial):
     val_loss /= len(test_loader)
     
     return val_loss  # or use -accuracy to maximize accuracy
+
 
 # Create a study and optimize the objective function
 study = optuna.create_study(direction="minimize", sampler=TPESampler())
