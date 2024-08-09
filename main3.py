@@ -133,7 +133,6 @@ print(f"Train dataset length: {len(train_dataset)}, Test dataset length: {len(te
 
 # Define the objective function for Optuna
 def objective(trial: Trial):
-    # Define the device
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
     # Hyperparameters to tune
@@ -143,9 +142,9 @@ def objective(trial: Trial):
     # Define loss function with class weights
     criterion = nn.CrossEntropyLoss(weight=class_weights.to(device))
     
-    # Create DataLoader with sampler
+    # Create DataLoader
     batch_size = 4
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, sampler=sampler)
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
     test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
     
     # Print dataset lengths
@@ -171,6 +170,7 @@ def objective(trial: Trial):
         for i, data in enumerate(train_loader, 0):
             try:
                 inputs, labels = data
+                print(f"Batch {i}: inputs shape {inputs.shape}, labels shape {labels.shape}")
                 inputs, labels = inputs.to(device), labels.to(device)
                 optimizer.zero_grad()
                 outputs = net(inputs)
@@ -190,6 +190,7 @@ def objective(trial: Trial):
         for data in test_loader:
             try:
                 images, labels = data
+                print(f"Validation data: images shape {images.shape}, labels shape {labels.shape}")
                 images, labels = images.to(device), labels.to(device)
                 outputs = net(images)
                 loss = criterion(outputs, labels)
