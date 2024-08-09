@@ -114,8 +114,12 @@ total_count = np.sum(class_counts)
 class_weights = total_count / (len(class_counts) * class_counts)
 print("Class Weights:", class_weights)
 
-# Convert to a tensor and move to the GPU if available
+# Define the device before using it
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+# Convert class weights to a tensor and move it to the GPU if available
 class_weights = torch.tensor(class_weights, dtype=torch.float).to(device)
+
 
 # Split dataset into train and test sets
 train_size = int(0.8 * len(dataset))
