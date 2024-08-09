@@ -11,6 +11,7 @@ from sklearn.utils.class_weight import compute_class_weight
 import optuna
 from optuna import Trial
 from optuna.samplers import TPESampler
+import numpy as np
 
 # Load the Excel file
 excel_file_path = './dataRef/release_midas.xlsx'
@@ -109,7 +110,8 @@ print(f"Dataset length: {len(dataset)}")
 
 # Compute class weights globally
 labels = [label for _, label in combined_image_paths]
-class_weights = compute_class_weight(class_weight='balanced', classes=list(label_map.values()), y=labels)
+classes = np.array(list(label_map.values()))  # Convert to NumPy array
+class_weights = compute_class_weight(class_weight='balanced', classes=classes, y=labels)
 class_weights = torch.tensor(class_weights, dtype=torch.float32)
 
 # Create sampler
