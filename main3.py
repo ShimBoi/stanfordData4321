@@ -1,208 +1,248 @@
-import pandas as pd
-import numpy as np
-import torch
-from torch.utils.data import Dataset, DataLoader, WeightedRandomSampler, SubsetRandomSampler
-from sklearn.model_selection import train_test_split
-from torchvision import transforms, models
-from PIL import Image
 import os
-import optuna
-import cv2
+import torch
+import torch.nn as nn
+import torch.optim as optim
+import torchvision.transforms as transforms
+import torchvision.models as models
+from torch.utils.data import DataLoader, Dataset, random_split
+from PIL import Image
+import pandas as pd
 import matplotlib.pyplot as plt
+from pytorch_grad_cam import GradCAM
+from pytorch_grad_cam.utils.image import show_cam_on_image
+import optuna
+from optuna import Trial
+from optuna.samplers import TPESampler
 
-# Define your custom dataset class
-class CustomDataset(Dataset):
-    def __init__(self, csv_file, root_dir, transform=None):
-        self.data_frame = pd.read_excel(csv_file)
-        self.root_dir = root_dir
+# Load the Excel file
+excel_file_path = './dataRef/release_midas.xlsx'
+if not os.path.exists(excel_file_path):
+    raise FileNotFoundError(f"{excel_file_path} does not exist. Please check the path.")
+
+df = pd.read_excel(excel_file_path)
+print("Excel file loaded. First few rows:")
+print(df.head())
+
+# Define categories and image size
+categories = ['7-malignant-bcc', '1-benign-melanocytic nevus', '6-benign-other',
+              '14-other-non-neoplastic/inflammatory/infectious', '8-malignant-scc',
+              '9-malignant-sccis', '10-malignant-ak', '3-benign-fibrous papule',
+              '4-benign-dermatofibroma', '2-benign-seborrheic keratosis',
+              '5-benign-hemangioma', '11-malignant-melanoma',
+              '13-other-melanocytic lesion with possible re-excision (severe/spitz nevus, aimp)',
+              '12-malignant-other']
+img_size = 224
+
+# Compose the transformation pipeline
+transform = transforms.Compose([
+    transforms.Resize((img_size, img_size)),
+    transforms.ToTensor(),
+    transforms.Normalize((0.5,), (0.5,))
+])
+
+class ImageDataset(Dataset):
+    def __init__(self, image_paths, transform=None):
+        self.image_paths = image_paths
         self.transform = transform
-        
-        # Map labels to numeric values
-        self.label_map = {label: idx for idx, label in enumerate(self.data_frame['clinical_impression_1'].unique())}
-        self.data_frame['label'] = self.data_frame['clinical_impression_1'].map(self.label_map)
-        
-        # Gather all image paths and labels
-        self.image_paths = [os.path.join(root_dir, img_name) for img_name in self.data_frame['midas_file_name']]
-        self.labels = self.data_frame['label'].tolist()
 
     def __len__(self):
         return len(self.image_paths)
-    
+
     def __getitem__(self, idx):
-        img_path = self.image_paths[idx]
-        image = Image.open(img_path).convert('RGB')
-        label = self.labels[idx]
-        
+        img_path, label = self.image_paths[idx]
+        image = Image.open(img_path).convert("RGB")
         if self.transform:
             image = self.transform(image)
-        
+        label = torch.tensor(label, dtype=torch.long)
         return image, label
 
-# Function to calculate class weights
-def compute_class_weights(labels):
-    class_counts = np.bincount(labels)
-    total_samples = len(labels)
-    num_classes = len(class_counts)
-    class_weights = [total_samples / (num_classes * count) for count in class_counts]
-    class_weights = [weight / max(class_weights) for weight in class_weights]  # Normalize weights
-    return class_weights
+# Load image paths from the original directories
+def load_original_image_paths(df, root_dirs, label_map):
+    image_paths = []
+    for idx, row in df.iterrows():
+        img_name = row['midas_file_name']
+        label = row['clinical_impression_1']
+        if label not in label_map:
+            continue
+        for root_dir in root_dirs:
+            img_path = os.path.join(root_dir, img_name)
+            if os.path.isfile(img_path):
+                image_paths.append((img_path, label_map[label]))
+                break
+    return image_paths
 
-# Define data transformations
-transform = transforms.Compose([
-    transforms.Resize((128, 128)),
-    transforms.ToTensor(),
-])
+# Load augmented images from the directory
+def load_augmented_image_paths(augmented_dir, label_map):
+    image_paths = []
+    for root, _, files in os.walk(augmented_dir):
+        for file in files:
+            if file.endswith('.png'):
+                label = int(os.path.basename(root))
+                img_path = os.path.join(root, file)
+                if label in label_map.values():
+                    image_paths.append((img_path, label))
+    return image_paths
 
-# Load datasets
-dataset = CustomDataset(csv_file='/root/stanfordData4321/stanfordData4321-1/dataRef/release_midas.xlsx', root_dir='/root/stanfordData4321/stanfordData4321-1', transform=transform)
+# Define the root directories for original images and augmented images
+root_dirs = [
+    '/root/stanfordData4321/stanfordData4321/images2',
+    '/root/stanfordData4321/stanfordData4321/images1',
+    '/root/stanfordData4321/stanfordData4321/images3',
+    '/root/stanfordData4321/stanfordData4321/images4'
+]
+augmented_dir = './augmented_images'  # Directory containing the augmented images
 
-# Get labels from dataset
-labels = [label for _, label in dataset]
+label_map = {label: idx for idx, label in enumerate(categories)}
 
-# Calculate sample weights
-class_weights = compute_class_weights(labels)
-sample_weights = np.array([class_weights[label] for label in labels])
+# Load original and augmented image paths
+original_image_paths = load_original_image_paths(df, root_dirs, label_map)
+augmented_image_paths = load_augmented_image_paths(augmented_dir, label_map)
 
-# Create a sampler for the training dataset
-sampler = WeightedRandomSampler(weights=sample_weights, num_samples=len(sample_weights), replacement=True)
+# Combine original and augmented image paths
+combined_image_paths = original_image_paths + augmented_image_paths
 
-# Split dataset into training and test sets
-indices = np.arange(len(dataset))
-train_indices, test_indices = train_test_split(indices, test_size=0.2, stratify=labels)
+print(f"Total original images: {len(original_image_paths)}")
+print(f"Total augmented images: {len(augmented_image_paths)}")
+print(f"Total images used in dataset: {len(combined_image_paths)}")
 
-train_sampler = SubsetRandomSampler(train_indices)
-test_sampler = SubsetRandomSampler(test_indices)
+# Create dataset
+dataset = ImageDataset(combined_image_paths, transform)
+print(f"Dataset length: {len(dataset)}")
 
-# Create DataLoaders
-train_loader = DataLoader(dataset, batch_size=32, sampler=train_sampler, num_workers=4)
-test_loader = DataLoader(dataset, batch_size=32, sampler=test_sampler, num_workers=4)
+# Split dataset into train and test sets
+train_size = int(0.8 * len(dataset))
+test_size = len(dataset) - train_size
 
-# Define model
-def create_model():
-    model = models.resnet18(pretrained=True)
-    model.fc = torch.nn.Linear(model.fc.in_features, len(set(labels)))  # Adjust output layer
-    return model
+print(f"Train size: {train_size}, Test size: {test_size}")
 
-# Grad-CAM implementation
-class GradCAM:
-    def __init__(self, model):
-        self.model = model
-        self.model.eval()
-        self.gradients = []
-        self.activations = []
+train_dataset, test_dataset = random_split(dataset, [train_size, test_size])
 
-        def save_gradient(grad):
-            self.gradients.append(grad)
+print(f"Train dataset length: {len(train_dataset)}, Test dataset length: {len(test_dataset)}")
 
-        def save_activation(module, input, output):
-            self.activations.append(output)
-
-        self.model.layer4[1].register_forward_hook(save_activation)
-        self.model.layer4[1].register_backward_hook(save_gradient)
+# Define the objective function for Optuna
+def objective(trial: Trial):
+    # Hyperparameters to tune
+    lr = trial.suggest_float("lr", 1e-5, 1e-1, log=True)
+    momentum = trial.suggest_float("momentum", 0.5, 0.9)
     
-    def forward(self, input_tensor):
-        self.gradients = []
-        self.activations = []
-        return self.model(input_tensor)
+    train_loader = DataLoader(train_dataset, batch_size=4, shuffle=True)
+    test_loader = DataLoader(test_dataset, batch_size=4, shuffle=False)
+    
+    # Load pre-trained model and modify the final layer
+    weights = models.ResNet18_Weights.DEFAULT
+    net = models.resnet18(weights=weights)
+    num_ftrs = net.fc.in_features
+    net.fc = nn.Linear(num_ftrs, len(categories))
 
-    def generate_cam(self, input_tensor, target_class):
-        self.model.zero_grad()
-        output = self.forward(input_tensor)
-        class_loss = output[0, target_class]
-        class_loss.backward()
-
-        gradients = self.gradients[0].cpu().data.numpy()[0]
-        activations = self.activations[0].cpu().data.numpy()[0]
-
-        weights = np.mean(gradients, axis=(1, 2))
-        cam = np.zeros(activations.shape[1:], dtype=np.float32)
-
-        for i, w in enumerate(weights):
-            cam += w * activations[i]
-
-        cam = np.maximum(cam, 0)
-        cam = cv2.resize(cam, (input_tensor.size(2), input_tensor.size(3)))
-        cam -= np.min(cam)
-        cam /= np.max(cam)
-        return cam
-
-# Objective function for Optuna
-def objective(trial):
-    lr = trial.suggest_float('lr', 1e-4, 1e-1, log=True)
-    momentum = trial.suggest_float('momentum', 0.7, 0.9)
-
-    model = create_model()
-    criterion = torch.nn.CrossEntropyLoss()
-    optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=momentum)
-
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    model.to(device)
-
+    # Move the model to GPU
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    net.to(device)
+    
+    # Define loss function and optimizer with hyperparameters
+    criterion = nn.CrossEntropyLoss()
+    optimizer = optim.SGD(net.parameters(), lr=lr, momentum=momentum)
+    
     # Training loop
-    model.train()
-    for epoch in range(2):  # Adjust number of epochs as needed
-        for inputs, labels in train_loader:
+    for epoch in range(15):  # Loop over the dataset multiple times
+        net.train()
+        running_loss = 0.0
+        for i, data in enumerate(train_loader, 0):
+            inputs, labels = data
             inputs, labels = inputs.to(device), labels.to(device)
             optimizer.zero_grad()
-            outputs = model(inputs)
+            outputs = net(inputs)
             loss = criterion(outputs, labels)
             loss.backward()
             optimizer.step()
+            running_loss += loss.item()
     
-    # Evaluate the model
-    model.eval()
+    # Validation loop
+    net.eval()
     correct = 0
     total = 0
+    val_loss = 0.0
     with torch.no_grad():
-        for inputs, labels in test_loader:
-            inputs, labels = inputs.to(device), labels.to(device)
-            outputs = model(inputs)
+        for data in test_loader:
+            images, labels = data
+            images, labels = images.to(device), labels.to(device)
+            outputs = net(images)
+            loss = criterion(outputs, labels)
+            val_loss += loss.item()
             _, predicted = torch.max(outputs.data, 1)
             total += labels.size(0)
             correct += (predicted == labels).sum().item()
     
-    accuracy = correct / total
-
-    # Generate Grad-CAM
-    grad_cam = GradCAM(model)
-    sample_input, sample_label = next(iter(test_loader))
-    sample_input = sample_input[0].unsqueeze(0).to(device)
-    target_class = sample_label[0].item()
+    accuracy = 100 * correct / total
+    val_loss /= len(test_loader)
     
-    cam = grad_cam.generate_cam(sample_input, target_class)
-    plt.imshow(cam, cmap='jet')
-    plt.show()
+    return val_loss  # or use -accuracy to maximize accuracy
 
-    return accuracy
+# Create a study and optimize the objective function
+study = optuna.create_study(direction="minimize", sampler=TPESampler())
+study.optimize(objective, n_trials=50)  # Adjust the number of trials
 
-# Run Optuna optimization
-study = optuna.create_study(direction='maximize')
-study.optimize(objective, n_trials=10)
-
+# Print the best hyperparameters
 print("Best trial:")
 trial = study.best_trial
 print(f"  Value: {trial.value}")
-print(f"  Params: {trial.params}")
+print(f"  Params: ")
+for key, value in trial.params.items():
+    print(f"    {key}: {value}")
 
-# Train final model with best parameters
+# Load pre-trained model with the best hyperparameters and train the final model
 best_lr = trial.params['lr']
 best_momentum = trial.params['momentum']
-final_model = create_model()
-criterion = torch.nn.CrossEntropyLoss()
-optimizer = torch.optim.SGD(final_model.parameters(), lr=best_lr, momentum=best_momentum)
 
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-final_model.to(device)
+train_loader = DataLoader(train_dataset, batch_size=4, shuffle=True)
+test_loader = DataLoader(test_dataset, batch_size=4, shuffle=False)
 
-# Training final model
-final_model.train()
-for epoch in range(2):  # Adjust number of epochs as needed
-    for inputs, labels in train_loader:
+# Load pre-trained model and modify the final layer
+weights = models.ResNet18_Weights.DEFAULT
+net = models.resnet18(weights=weights)
+num_ftrs = net.fc.in_features
+net.fc = nn.Linear(num_ftrs, len(categories))
+
+# Move the model to GPU
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+net.to(device)
+
+# Define loss function and optimizer with best hyperparameters
+criterion = nn.CrossEntropyLoss()
+optimizer = optim.SGD(net.parameters(), lr=best_lr, momentum=best_momentum)
+
+# Training loop with the best hyperparameters
+for epoch in range(15):  # Loop over the dataset multiple times
+    running_loss = 0.0
+    print(epoch)
+    for i, data in enumerate(train_loader, 0):
+        inputs, labels = data
         inputs, labels = inputs.to(device), labels.to(device)
         optimizer.zero_grad()
-        outputs = final_model(inputs)
+        outputs = net(inputs)
         loss = criterion(outputs, labels)
         loss.backward()
         optimizer.step()
+        running_loss += loss.item()
+        if i % 2000 == 1999:  # Print every 2000 mini-batches
+            print(f"[{epoch + 1}, {i + 1}] loss: {running_loss / 2000:.3f}")
+            running_loss = 0.0
 
-print("Training complete.")
+print("Finished Training")
+
+# Save the trained model
+PATH = './resnet18_model.pth'
+torch.save(net.state_dict(), PATH)
+
+# Test the model
+correct = 0
+total = 0
+with torch.no_grad():
+    for data in test_loader:
+        images, labels = data
+        images, labels = images.to(device), labels.to(device)
+        outputs = net(images)
+        _, predicted = torch.max(outputs.data, 1)
+        total += labels.size(0)
+        correct += (predicted == labels).sum().item()
+
+print(f"Accuracy of the network on the {total} test images: {100 * correct / total}%")
