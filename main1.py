@@ -110,13 +110,25 @@ root_dirs = [
     '/root/stanfordData4321/stanfordData4321/images4'
 ]
 
+# Function to count images per label
+def count_images_per_label(dataset):
+    label_counts = Counter(label.item() for _, label in dataset)
+    return {categories[label]: count for label, count in label_counts.items()}
+
+# Count images before augmentation
+dataset = ExcelImageDataset(excel_file_path, root_dirs, transform)
+pre_augmentation_counts = count_images_per_label(dataset)
+print("Image counts before augmentation:")
+for label, count in pre_augmentation_counts.items():
+    print(f"{label}: {count}")
+
 # Save augmented images
 def save_augmented_images(dataset, output_dir, num_augmentations=5):
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
     
     # Count the number of images per label in the original dataset
-    label_counts = Counter(label for _, label in dataset)
+    label_counts = Counter(label.item() for _, label in dataset)
     max_count = max(label_counts.values())
 
     for idx in range(len(dataset)):
@@ -140,15 +152,10 @@ def save_augmented_images(dataset, output_dir, num_augmentations=5):
             num_generated += 1
 
 # Create dataset and save augmented images
-dataset = ExcelImageDataset(excel_file_path, root_dirs, transform)
-print(f"Dataset length before augmentation: {len(dataset)}")
 output_dir = './augmented_images'
 save_augmented_images(dataset, output_dir, num_augmentations=5)
 
-# Check if augmented images are saved correctly
-print(f"Total augmented images: {sum([len(files) for r, d, files in os.walk(output_dir)])}")
-
-# Function to load both original and augmented images
+# Function to count images per label in augmented dataset
 class AugmentedImageDataset(Dataset):
     def __init__(self, original_dataset, augmented_dir, transform=None):
         self.original_dataset = original_dataset
@@ -183,11 +190,15 @@ class AugmentedImageDataset(Dataset):
 augmented_dataset = AugmentedImageDataset(dataset, output_dir, transform)
 print(f"Total images in augmented dataset: {len(augmented_dataset)}")
 
+# Count images after augmentation
+post_augmentation_counts = count_images_per_label(augmented_dataset)
+print("Image counts after augmentation:")
+for label, count in post_augmentation_counts.items():
+    print(f"{label}: {count}")
+
+# Split dataset
 train_size = int(0.8 * len(augmented_dataset))
 test_size = len(augmented_dataset) - train_size
-
-print(f"Train size: {train_size}, Test size: {test_size}")
-
 train_dataset, test_dataset = random_split(augmented_dataset, [train_size, test_size])
 
 print(f"Train dataset length: {len(train_dataset)}, Test dataset length: {len(test_dataset)}")
@@ -215,75 +226,56 @@ for epoch in range(3):  # Loop over the dataset multiple times
     running_loss = 0.0
     print(epoch)
     for i, data in enumerate(train_loader, 0):
-        # Get the inputs and move them to GPU
         inputs, labels = data
         inputs, labels = inputs.to(device), labels.to(device)
 
-        # Zero the parameter gradients
         optimizer.zero_grad()
-
-        # Forward + backward + optimize
         outputs = net(inputs)
         loss = criterion(outputs, labels)
         loss.backward()
         optimizer.step()
 
-        # Print statistics
         running_loss += loss.item()
-        if i % 2000 == 1999:  # Print every 2000 mini-batches
-            print(f"[{epoch + 1}, {i + 1}] loss: {running_loss / 2000:.3f}")
+        if i % 100 == 99:  # Print every 100 mini-batches
+            print(f'[{epoch + 1}, {i + 1}] loss: {running_loss / 100:.3f}')
             running_loss = 0.0
 
-print("Finished Training")
+print('Finished Training')
 
-# Save the trained model
-PATH = './resnet18_model.pth'
-torch.save(net.state_dict(), PATH)
-
-# Test the model
+# Evaluate the model
 correct = 0
 total = 0
 with torch.no_grad():
     for data in test_loader:
         images, labels = data
-        images, labels = images.to(device), labels.to(device)
-        outputs = net(images)
+        outputs = net(images.to(device))
         _, predicted = torch.max(outputs.data, 1)
         total += labels.size(0)
-        correct += (predicted == labels).sum().item()
+        correct += (predicted.cpu() == labels).sum().item()
 
-print(f"Accuracy of the network: {100 * correct / total:.2f} %")
+print(f'Accuracy of the network on the test images: {100 * correct // total} %')
 
-# Grad-CAM explanation
-def get_grad_cam_explanation(vision_model, image, target_layer):
-    cam = GradCAM(model=vision_model, target_layers=[target_layer])
-    grayscale_cam = cam(input_tensor=image.unsqueeze(0))
-    image = image.permute(1, 2, 0).cpu().numpy()
-    cam_image = show_cam_on_image(image, grayscale_cam[0, :], use_rgb=True)
-    return cam_image
+# Grad-CAM
+def apply_grad_cam(img_path, model, transform, target_layer):
+    model.eval()
+    image = Image.open(img_path).convert("RGB")
+    input_tensor = transform(image).unsqueeze(0).to(device)
 
-# Example usage
-target_layer = net.layer4[-1].conv2  # Adjust target layer
-sample_image, _ = augmented_dataset[0]
-sample_image = sample_image.to(device)
-cam_image = get_grad_cam_explanation(net, sample_image, target_layer)
+    with torch.no_grad():
+        output = model(input_tensor)
+        pred = output.argmax(dim=1)
 
-print("Grad-CAM Image Generated")
+    grad_cam = GradCAM(model=model, target_layers=[target_layer], use_cuda=True)
+    grayscale_cam = grad_cam(input_tensor=input_tensor, target_category=pred.item())[0, :]
+    cam_image = show_cam_on_image(np.array(image), grayscale_cam, use_rgb=True)
 
-# Function to visualize the Grad-CAM image
-def visualize_grad_cam(cam_image):
     plt.imshow(cam_image)
-    plt.axis('off')  # Hide the axis
     plt.show()
 
-# Function to save the Grad-CAM image
-def save_grad_cam(cam_image, filename='grad_cam_output.png'):
-    plt.imsave(filename, cam_image)
+# Example usage of Grad-CAM
+apply_grad_cam('./augmented_images/7-malignant-bcc/0_original.png', net, net.layer4[1].conv2, transform)
 
-# Visualize the Grad-CAM image
-visualize_grad_cam(cam_image)
-
-# Save the Grad-CAM image
-save_grad_cam(cam_image, 'grad_cam_image.png')
-
-print("Grad-CAM Image Generated and Saved")
+# Save model checkpoint
+checkpoint_path = './model_checkpoint.pth'
+torch.save(net.state_dict(), checkpoint_path)
+print(f"Model checkpoint saved to {checkpoint_path}")
