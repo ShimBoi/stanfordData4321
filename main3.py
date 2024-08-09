@@ -23,13 +23,15 @@ print("Excel file loaded. First few rows:")
 print(df.head())
 
 # Define categories and image size
-categories = ['7-malignant-bcc', '1-benign-melanocytic nevus', '6-benign-other',
-              '14-other-non-neoplastic/inflammatory/infectious', '8-malignant-scc',
-              '9-malignant-sccis', '10-malignant-ak', '3-benign-fibrous papule',
-              '4-benign-dermatofibroma', '2-benign-seborrheic keratosis',
-              '5-benign-hemangioma', '11-malignant-melanoma',
-              '13-other-melanocytic lesion with possible re-excision (severe/spitz nevus, aimp)',
-              '12-malignant-other']
+categories = [
+    '7-malignant-bcc', '1-benign-melanocytic nevus', '6-benign-other',
+    '14-other-non-neoplastic/inflammatory/infectious', '8-malignant-scc',
+    '9-malignant-sccis', '10-malignant-ak', '3-benign-fibrous papule',
+    '4-benign-dermatofibroma', '2-benign-seborrheic keratosis',
+    '5-benign-hemangioma', '11-malignant-melanoma',
+    '13-other-melanocytic lesion with possible re-excision (severe/spitz nevus, aimp)',
+    '12-malignant-other'
+]
 img_size = 224
 
 # Compose the transformation pipeline
@@ -120,7 +122,6 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # Convert class weights to a tensor and move it to the GPU if available
 class_weights = torch.tensor(class_weights, dtype=torch.float).to(device)
 
-
 # Split dataset into train and test sets
 train_size = int(0.8 * len(dataset))
 test_size = len(dataset) - train_size
@@ -207,11 +208,12 @@ print("Best hyperparameters: ", best_trial.params)
 lr = best_trial.params['lr']
 momentum = best_trial.params['momentum']
 optimizer = optim.SGD(net.parameters(), lr=lr, momentum=momentum)
+criterion = nn.CrossEntropyLoss(weight=class_weights)
 
 # Training loop with best parameters
 for epoch in range(5):
     running_loss = 0.0
-    print(epoch)
+    print(f"Epoch {epoch+1}")
     for i, data in enumerate(train_loader, 0):
         inputs, labels = data
         inputs, labels = inputs.to(device), labels.to(device)
@@ -242,18 +244,34 @@ with torch.no_grad():
         total += labels.size(0)
         correct += (predicted == labels).sum().item()
 
-print(f"Accuracy of the network: {100 * correct / total:.2f} %")
+print(f"Accuracy of the network: {100 * correct / total:.2f}%")
 
-# Grad-CAM explanation
-def get_grad_cam_explanation(vision_model, image, target_layer):
-    cam = GradCAM(model=vision_model, target_layers=[target_layer], use_cuda=torch.cuda.is_available())
-    grayscale_cam = cam(input_tensor=image.unsqueeze(0))[0, :]
-    image = image.permute(1, 2, 0).cpu().numpy()
-    visualization = show_cam_on_image(image, grayscale_cam, use_rgb=True)
-    return visualization
+# Grad-CAM visualization
+def visualize_gradcam(img_path, class_idx, model, transform):
+    image = Image.open(img_path).convert("RGB")
+    input_image = transform(image).unsqueeze(0).to(device)
 
-# Example usage with the first image in the test set
-example_image, _ = test_dataset[0]
-visualization = get_grad_cam_explanation(net, example_image, net.layer4)
-plt.imshow(visualization)
-plt.show()
+    model.eval()
+    with torch.no_grad():
+        output = model(input_image)
+        pred_class = output.argmax(dim=1).item()
+
+    # Initialize GradCAM
+    grad_cam = GradCAM(model=model, target_layers=[model.layer4[-1]])
+
+    # Generate GradCAM
+    grayscale_cam = grad_cam(input_tensor=input_image, target_category=class_idx)
+    grayscale_cam = grayscale_cam[0, :]
+
+    # Convert to numpy and show
+    image = np.array(image) / 255.0
+    cam_image = show_cam_on_image(image, grayscale_cam, use_rgb=True)
+    plt.imshow(cam_image)
+    plt.title(f'Grad-CAM for class: {categories[class_idx]}')
+    plt.axis('off')
+    plt.show()
+
+# Example usage of Grad-CAM
+test_image_path = '/path/to/sample_image.png'  # Change to your test image path
+test_class_idx = 1  # Change to your test class index
+visualize_gradcam(test_image_path, test_class_idx, net, transform)
