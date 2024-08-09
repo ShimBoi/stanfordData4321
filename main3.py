@@ -10,9 +10,9 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from pytorch_grad_cam import GradCAM
 from pytorch_grad_cam.utils.image import show_cam_on_image
+from sklearn.utils.class_weight import compute_class_weight
+import numpy as np
 import optuna
-from optuna import Trial
-from optuna.samplers import TPESampler
 
 # Load the Excel file
 excel_file_path = './dataRef/release_midas.xlsx'
@@ -20,8 +20,13 @@ if not os.path.exists(excel_file_path):
     raise FileNotFoundError(f"{excel_file_path} does not exist. Please check the path.")
 
 df = pd.read_excel(excel_file_path)
-print("Excel file loaded. First few rows:")
-print(df.head())
+df = df.dropna(subset=['clinical_impression_1'])  # Drop rows with NaN labels
+
+# Calculate class weights
+labels = df['clinical_impression_1'].values
+class_weights = compute_class_weight(class_weight='balanced', classes=np.unique(labels), y=labels)
+class_weights_dict = {i: weight for i, weight in enumerate(class_weights)}
+weights_tensor = torch.tensor(list(class_weights_dict.values()), dtype=torch.float).to(device)
 
 # Define categories and image size
 categories = ['7-malignant-bcc', '1-benign-melanocytic nevus', '6-benign-other',
@@ -101,97 +106,14 @@ augmented_image_paths = load_augmented_image_paths(augmented_dir, label_map)
 # Combine original and augmented image paths
 combined_image_paths = original_image_paths + augmented_image_paths
 
-print(f"Total original images: {len(original_image_paths)}")
-print(f"Total augmented images: {len(augmented_image_paths)}")
-print(f"Total images used in dataset: {len(combined_image_paths)}")
-
 # Create dataset
 dataset = ImageDataset(combined_image_paths, transform)
-print(f"Dataset length: {len(dataset)}")
 
 # Split dataset into train and test sets
 train_size = int(0.8 * len(dataset))
 test_size = len(dataset) - train_size
 
-print(f"Train size: {train_size}, Test size: {test_size}")
-
 train_dataset, test_dataset = random_split(dataset, [train_size, test_size])
-
-print(f"Train dataset length: {len(train_dataset)}, Test dataset length: {len(test_dataset)}")
-
-# Define the objective function for Optuna
-def objective(trial: Trial):
-    # Hyperparameters to tune
-    lr = trial.suggest_float("lr", 1e-5, 1e-1, log=True)
-    momentum = trial.suggest_float("momentum", 0.5, 0.9)
-    
-    train_loader = DataLoader(train_dataset, batch_size=4, shuffle=True)
-    test_loader = DataLoader(test_dataset, batch_size=4, shuffle=False)
-    
-    # Load pre-trained model and modify the final layer
-    weights = models.ResNet18_Weights.DEFAULT
-    net = models.resnet18(weights=weights)
-    num_ftrs = net.fc.in_features
-    net.fc = nn.Linear(num_ftrs, len(categories))
-
-    # Move the model to GPU
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    net.to(device)
-    
-    # Define loss function and optimizer with hyperparameters
-    criterion = nn.CrossEntropyLoss()
-    optimizer = optim.SGD(net.parameters(), lr=lr, momentum=momentum)
-    
-    # Training loop
-    for epoch in range(5):  # Loop over the dataset multiple times
-        net.train()
-        running_loss = 0.0
-        for i, data in enumerate(train_loader, 0):
-            inputs, labels = data
-            inputs, labels = inputs.to(device), labels.to(device)
-            optimizer.zero_grad()
-            outputs = net(inputs)
-            loss = criterion(outputs, labels)
-            loss.backward()
-            optimizer.step()
-            running_loss += loss.item()
-    
-    # Validation loop
-    net.eval()
-    correct = 0
-    total = 0
-    val_loss = 0.0
-    with torch.no_grad():
-        for data in test_loader:
-            images, labels = data
-            images, labels = images.to(device), labels.to(device)
-            outputs = net(images)
-            loss = criterion(outputs, labels)
-            val_loss += loss.item()
-            _, predicted = torch.max(outputs.data, 1)
-            total += labels.size(0)
-            correct += (predicted == labels).sum().item()
-    
-    accuracy = 100 * correct / total
-    val_loss /= len(test_loader)
-    
-    return val_loss  # or use -accuracy to maximize accuracy
-
-# Create a study and optimize the objective function
-study = optuna.create_study(direction="minimize", sampler=TPESampler())
-study.optimize(objective, n_trials=50)  # Adjust the number of trials
-
-# Print the best hyperparameters
-print("Best trial:")
-trial = study.best_trial
-print(f"  Value: {trial.value}")
-print(f"  Params: ")
-for key, value in trial.params.items():
-    print(f"    {key}: {value}")
-
-# Load pre-trained model with the best hyperparameters and train the final model
-best_lr = trial.params['lr']
-best_momentum = trial.params['momentum']
 
 train_loader = DataLoader(train_dataset, batch_size=4, shuffle=True)
 test_loader = DataLoader(test_dataset, batch_size=4, shuffle=False)
@@ -206,22 +128,28 @@ net.fc = nn.Linear(num_ftrs, len(categories))
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 net.to(device)
 
-# Define loss function and optimizer with best hyperparameters
-criterion = nn.CrossEntropyLoss()
-optimizer = optim.SGD(net.parameters(), lr=best_lr, momentum=best_momentum)
+# Define loss function and optimizer
+criterion = nn.CrossEntropyLoss(weight=weights_tensor)
+optimizer = optim.SGD(net.parameters(), lr=0.1, momentum=0.9)
 
-# Training loop with the best hyperparameters
+# Training loop
 for epoch in range(3):  # Loop over the dataset multiple times
     running_loss = 0.0
-    print(epoch)
     for i, data in enumerate(train_loader, 0):
+        # Get the inputs and move them to GPU
         inputs, labels = data
         inputs, labels = inputs.to(device), labels.to(device)
+
+        # Zero the parameter gradients
         optimizer.zero_grad()
+
+        # Forward + backward + optimize
         outputs = net(inputs)
         loss = criterion(outputs, labels)
         loss.backward()
         optimizer.step()
+
+        # Print statistics
         running_loss += loss.item()
         if i % 2000 == 1999:  # Print every 2000 mini-batches
             print(f"[{epoch + 1}, {i + 1}] loss: {running_loss / 2000:.3f}")
@@ -245,4 +173,27 @@ with torch.no_grad():
         total += labels.size(0)
         correct += (predicted == labels).sum().item()
 
-print(f"Accuracy of the network on the {total} test images: {100 * correct / total}%")
+print(f"Accuracy of the network: {100 * correct / total:.2f} %")
+
+# Grad-CAM explanation
+def get_grad_cam_explanation(vision_model, image, target_layer):
+    cam = GradCAM(model=vision_model, target_layers=[target_layer])
+    grayscale_cam = cam(input_tensor=image.unsqueeze(0))
+    image = image.permute(1, 2, 0).cpu().numpy()
+    cam_image = show_cam_on_image(image, grayscale_cam[0, :], use_rgb=True)
+    return cam_image
+
+# Example usage
+target_layer = net.layer4[-1].conv2  # Adjust target layer
+sample_image, _ = dataset[0]
+sample_image = sample_image.to(device)
+cam_image = get_grad_cam_explanation(net, sample_image, target_layer)
+
+# Visualize the Grad-CAM image
+def visualize_grad_cam(cam_image):
+    plt.imshow(cam_image)
+    plt.axis('off')  # Hide the axis
+    plt.show()
+
+# Save the Grad-CAM image
+def save_grad_cam(cam_image, filename='grad_cam_output.png'):
