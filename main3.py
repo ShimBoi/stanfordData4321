@@ -54,7 +54,7 @@ transform = transforms.Compose([
 ])
 
 # Load datasets
-dataset = CustomDataset(csv_file='/root/stanfordData4321/stanfordData4321-1/dataRef/release_midas.xlsx', root_dir='/path/to/your/root_directory', transform=transform)
+dataset = CustomDataset(csv_file='/root/stanfordData4321/stanfordData4321-1/dataRef/release_midas.xlsx', root_dir='/root/stanfordData4321/stanfordData4321-1', transform=transform)
 
 # Get labels from dataset
 labels = [label for _, label in dataset]
