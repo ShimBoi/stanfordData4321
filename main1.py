@@ -140,15 +140,15 @@ def save_augmented_images(dataset, output_dir, num_augmentations=5):
         original_img_path = os.path.join(label_dir, f"{idx}_original.png")
         save_image(img, original_img_path)
         
-        # Generate and save augmented images until the count matches the maximum
-        pil_img = transforms.ToPILImage()(img)  # Convert tensor to PIL Image
-        num_generated = len([f for f in os.listdir(label_dir) if f.endswith('.png')])
-        while num_generated < max_count:
+        # Ensure each label has max_count images
+        current_label_count = len([f for f in os.listdir(label_dir) if f.endswith('.png')])
+        while current_label_count < max_count:
+            pil_img = transforms.ToPILImage()(img)  # Convert tensor to PIL Image
             augmented_img = augmentation_transforms(pil_img)  # Apply augmentation
             augmented_img = transform(augmented_img)  # Convert to tensor and normalize
-            augmented_img_path = os.path.join(label_dir, f"{idx}_aug_{num_generated}.png")
+            augmented_img_path = os.path.join(label_dir, f"{idx}_aug_{current_label_count}.png")
             save_image(augmented_img, augmented_img_path)
-            num_generated += 1
+            current_label_count += 1
 
 
 # Create dataset and save augmented images
