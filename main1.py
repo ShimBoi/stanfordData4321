@@ -128,7 +128,7 @@ def save_augmented_images(dataset, output_dir, num_augmentations=5):
     
     # Count the number of images per label in the original dataset
     label_counts = Counter(label.item() for _, label in dataset)
-    max_count = max(label_counts.values())
+    max_count = max(label_counts.values())  # Find the maximum count
 
     for idx in range(len(dataset)):
         img, label = dataset[idx]
@@ -149,6 +149,7 @@ def save_augmented_images(dataset, output_dir, num_augmentations=5):
             augmented_img_path = os.path.join(label_dir, f"{idx}_aug_{num_generated}.png")
             save_image(augmented_img, augmented_img_path)
             num_generated += 1
+
 
 # Create dataset and save augmented images
 output_dir = './augmented_images'
@@ -221,7 +222,7 @@ criterion = nn.CrossEntropyLoss()
 optimizer = optim.SGD(net.parameters(), lr=0.1, momentum=0.9)
 
 # Training loop
-for epoch in range(50):  # Loop over the dataset multiple times
+for epoch in range(5):  # Loop over the dataset multiple times
     running_loss = 0.0
     print(epoch)
     for i, data in enumerate(train_loader, 0):
