@@ -122,13 +122,12 @@ for label, count in pre_augmentation_counts.items():
     print(f"{label}: {count}")
 
 # Save augmented images
-def save_augmented_images(dataset, output_dir, num_augmentations=5):
+def save_augmented_images(dataset, output_dir, max_count_per_label=1500):
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
     
     # Count the number of images per label in the original dataset
     label_counts = Counter(label.item() for _, label in dataset)
-    max_count = max(label_counts.values())  # Find the maximum count
 
     for idx in range(len(dataset)):
         img, label = dataset[idx]
@@ -136,24 +135,28 @@ def save_augmented_images(dataset, output_dir, num_augmentations=5):
         if not os.path.exists(label_dir):
             os.makedirs(label_dir)
         
+        # If the current label already has 1500 images, skip further augmentation
+        if label_counts[label.item()] >= max_count_per_label:
+            continue
+        
         # Save the original image
         original_img_path = os.path.join(label_dir, f"{idx}_original.png")
         save_image(img, original_img_path)
+        label_counts[label.item()] += 1
         
-        # Ensure each label has max_count images
-        current_label_count = len([f for f in os.listdir(label_dir) if f.endswith('.png')])
-        while current_label_count < max_count:
-            pil_img = transforms.ToPILImage()(img)  # Convert tensor to PIL Image
+        # Generate and save augmented images until the count matches the maximum (1500)
+        pil_img = transforms.ToPILImage()(img)  # Convert tensor to PIL Image
+        while label_counts[label.item()] < max_count_per_label:
             augmented_img = augmentation_transforms(pil_img)  # Apply augmentation
             augmented_img = transform(augmented_img)  # Convert to tensor and normalize
-            augmented_img_path = os.path.join(label_dir, f"{idx}_aug_{current_label_count}.png")
+            augmented_img_path = os.path.join(label_dir, f"{idx}_aug_{label_counts[label.item()]}.png")
             save_image(augmented_img, augmented_img_path)
-            current_label_count += 1
+            label_counts[label.item()] += 1
 
 
 # Create dataset and save augmented images
 output_dir = './augmented_images'
-save_augmented_images(dataset, output_dir, num_augmentations=5)
+save_augmented_images(dataset, output_dir, max_count_per_label=1500)
 
 # Function to count images per label in augmented dataset
 class AugmentedImageDataset(Dataset):
