@@ -122,41 +122,43 @@ for label, count in pre_augmentation_counts.items():
     print(f"{label}: {count}")
 
 # Save augmented images
-def save_augmented_images(dataset, output_dir, max_count_per_label=1500):
+def save_augmented_images_with_cap(dataset, output_dir, max_count=1500):
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
     
-    # Count the number of images per label in the original dataset
     label_counts = Counter(label.item() for _, label in dataset)
-
+    
     for idx in range(len(dataset)):
         img, label = dataset[idx]
         label_dir = os.path.join(output_dir, str(label.item()))
         if not os.path.exists(label_dir):
             os.makedirs(label_dir)
         
-        # If the current label already has 1500 images, skip further augmentation
-        if label_counts[label.item()] >= max_count_per_label:
+        # Count the number of images already saved for this label
+        current_count = len([f for f in os.listdir(label_dir) if f.endswith('.png')])
+        
+        # If the current count is already at or above the maximum, skip further augmentation
+        if current_count >= max_count:
             continue
         
-        # Save the original image
-        original_img_path = os.path.join(label_dir, f"{idx}_original.png")
-        save_image(img, original_img_path)
-        label_counts[label.item()] += 1
+        # Save the original image if not yet saved
+        if current_count == 0:
+            original_img_path = os.path.join(label_dir, f"{idx}_original.png")
+            save_image(img, original_img_path)
+            current_count += 1
         
-        # Generate and save augmented images until the count matches the maximum (1500)
+        # Generate and save augmented images until the count reaches the maximum
         pil_img = transforms.ToPILImage()(img)  # Convert tensor to PIL Image
-        while label_counts[label.item()] < max_count_per_label:
+        while current_count < max_count:
             augmented_img = augmentation_transforms(pil_img)  # Apply augmentation
             augmented_img = transform(augmented_img)  # Convert to tensor and normalize
-            augmented_img_path = os.path.join(label_dir, f"{idx}_aug_{label_counts[label.item()]}.png")
+            augmented_img_path = os.path.join(label_dir, f"{idx}_aug_{current_count}.png")
             save_image(augmented_img, augmented_img_path)
-            label_counts[label.item()] += 1
-
+            current_count += 1
 
 # Create dataset and save augmented images
 output_dir = './augmented_images'
-save_augmented_images(dataset, output_dir, max_count_per_label=1500)
+save_augmented_images_with_cap(dataset, output_dir, max_count=1500)
 
 # Function to count images per label in augmented dataset
 class AugmentedImageDataset(Dataset):
@@ -177,17 +179,14 @@ class AugmentedImageDataset(Dataset):
         return augmented_paths
 
     def __len__(self):
-        return len(self.original_dataset) + len(self.augmented_paths)
+        return len(self.augmented_paths)
 
     def __getitem__(self, idx):
-        if idx < len(self.original_dataset):
-            return self.original_dataset[idx]
-        else:
-            img_path, label = self.augmented_paths[idx - len(self.original_dataset)]
-            image = Image.open(img_path).convert("RGB")
-            if self.transform:
-                image = self.transform(image)
-            return image, torch.tensor(label, dtype=torch.long)
+        img_path, label = self.augmented_paths[idx]
+        image = Image.open(img_path).convert("RGB")
+        if self.transform:
+            image = self.transform(image)
+        return image, torch.tensor(label, dtype=torch.long)
 
 # Create the combined dataset
 augmented_dataset = AugmentedImageDataset(dataset, output_dir, transform)
