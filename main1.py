@@ -13,6 +13,7 @@ import matplotlib.pyplot as plt
 from pytorch_grad_cam import GradCAM
 from pytorch_grad_cam.utils.image import show_cam_on_image
 from collections import Counter
+import random
 
 # Print the current working directory
 print("Current working directory:", os.getcwd())
@@ -122,7 +123,7 @@ for label, count in pre_augmentation_counts.items():
     print(f"{label}: {count}")
 
 # Save augmented images
-def save_augmented_images_with_cap(dataset, output_dir, max_count=1500):
+def save_augmented_images_with_exact_cap(dataset, output_dir, target_count=1500):
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
     
@@ -137,8 +138,8 @@ def save_augmented_images_with_cap(dataset, output_dir, max_count=1500):
         # Count the number of images already saved for this label
         current_count = len([f for f in os.listdir(label_dir) if f.endswith('.png')])
         
-        # If the current count is already at or above the maximum, skip further augmentation
-        if current_count >= max_count:
+        # If the current count is already at or above the target, skip further augmentation
+        if current_count >= target_count:
             continue
         
         # Save the original image if not yet saved
@@ -147,18 +148,28 @@ def save_augmented_images_with_cap(dataset, output_dir, max_count=1500):
             save_image(img, original_img_path)
             current_count += 1
         
-        # Generate and save augmented images until the count reaches the maximum
+        # Generate and save augmented images until the count reaches the target
         pil_img = transforms.ToPILImage()(img)  # Convert tensor to PIL Image
-        while current_count < max_count:
+        while current_count < target_count:
             augmented_img = augmentation_transforms(pil_img)  # Apply augmentation
             augmented_img = transform(augmented_img)  # Convert to tensor and normalize
             augmented_img_path = os.path.join(label_dir, f"{idx}_aug_{current_count}.png")
             save_image(augmented_img, augmented_img_path)
             current_count += 1
+    
+    # Cap all labels at target_count by randomly selecting 1500 images if a label has more
+    for label in os.listdir(output_dir):
+        label_dir = os.path.join(output_dir, label)
+        images = [f for f in os.listdir(label_dir) if f.endswith('.png')]
+        if len(images) > target_count:
+            images_to_keep = random.sample(images, target_count)
+            images_to_remove = set(images) - set(images_to_keep)
+            for img in images_to_remove:
+                os.remove(os.path.join(label_dir, img))
 
 # Create dataset and save augmented images
 output_dir = './augmented_images'
-save_augmented_images_with_cap(dataset, output_dir, max_count=1500)
+save_augmented_images_with_exact_cap(dataset, output_dir, target_count=1500)
 
 # Function to count images per label in augmented dataset
 class AugmentedImageDataset(Dataset):
