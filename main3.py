@@ -11,20 +11,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 from pytorch_grad_cam import GradCAM
 from pytorch_grad_cam.utils.image import show_cam_on_image
-from collections import Counter
 import optuna
-
-# Print the current working directory
-print("Current working directory:", os.getcwd())
-
-# Load the Excel file
-excel_file_path = './dataRef/release_midas.xlsx'
-if not os.path.exists(excel_file_path):
-    raise FileNotFoundError(f"{excel_file_path} does not exist. Please check the path.")
-
-df = pd.read_excel(excel_file_path)
-print("Excel file loaded. First few rows:")
-print(df.head())
+from collections import Counter
 
 # Define categories and image size
 categories = ['7-malignant-bcc', '1-benign-melanocytic nevus', '6-benign-other',
@@ -36,7 +24,7 @@ categories = ['7-malignant-bcc', '1-benign-melanocytic nevus', '6-benign-other',
               '12-malignant-other']
 img_size = 224
 
-# Compose the transformation pipeline
+# Define transformations
 transform = transforms.Compose([
     transforms.Resize((img_size, img_size)),
     transforms.ToTensor(),
@@ -49,10 +37,7 @@ class ExcelImageDataset(Dataset):
         self.data_frame.iloc[:, 0] = self.data_frame.iloc[:, 0].astype(str)
         self.root_dirs = root_dirs
         self.transform = transform
-
-        # Ensure the label categories are consistent with the provided categories
         self.label_map = {label: idx for idx, label in enumerate(categories)}
-
         self.image_paths = self._get_image_paths()
 
     def _get_image_paths(self):
@@ -82,8 +67,6 @@ class ExcelImageDataset(Dataset):
         image = Image.open(img_name).convert("RGB")
         if self.transform:
             image = self.transform(image)
-
-        # Convert label to tensor with encoding
         label = torch.tensor(self.label_map.get(label, -1), dtype=torch.long)
         return image, label
 
@@ -93,7 +76,6 @@ root_dirs = [
     '/root/stanfordData4321/stanfordData4321/images1',
     '/root/stanfordData4321/stanfordData4321/images3',
     '/root/stanfordData4321/stanfordData4321/images4'
-    '/root/stanfordData4321/stanfordData4321/augmented_images'
 ]
 
 # Function to count images per label
@@ -101,48 +83,86 @@ def count_images_per_label(dataset):
     label_counts = Counter(label.item() for _, label in dataset)
     return {categories[label]: count for label, count in label_counts.items()}
 
-# Load the dataset using augmented images from GitHub
-dataset = ExcelImageDataset(excel_file_path, root_dirs, transform)
-image_counts = count_images_per_label(dataset)
-print("Image counts:")
-for label, count in image_counts.items():
+# Load dataset
+dataset = ExcelImageDataset('./dataRef/release_midas.xlsx', root_dirs, transform)
+
+# Count images before augmentation
+pre_augmentation_counts = count_images_per_label(dataset)
+print("Image counts before augmentation:")
+for label, count in pre_augmentation_counts.items():
+    print(f"{label}: {count}")
+
+# Function to count images per label in augmented dataset
+class AugmentedImageDataset(Dataset):
+    def __init__(self, original_dataset, augmented_dir, transform=None):
+        self.original_dataset = original_dataset
+        self.augmented_dir = augmented_dir
+        self.transform = transform
+        self.augmented_paths = self._get_augmented_paths()
+
+    def _get_augmented_paths(self):
+        augmented_paths = []
+        for root, _, files in os.walk(self.augmented_dir):
+            for file in files:
+                if file.endswith(".png"):
+                    img_path = os.path.join(root, file)
+                    label = int(os.path.basename(root))
+                    augmented_paths.append((img_path, label))
+        return augmented_paths
+
+    def __len__(self):
+        return len(self.augmented_paths)
+
+    def __getitem__(self, idx):
+        img_path, label = self.augmented_paths[idx]
+        image = Image.open(img_path).convert("RGB")
+        if self.transform:
+            image = self.transform(image)
+        return image, torch.tensor(label, dtype=torch.long)
+
+# Create the combined dataset using augmented images
+augmented_dataset = AugmentedImageDataset(dataset, './augmented_images', transform)
+print(f"Total images in augmented dataset: {len(augmented_dataset)}")
+
+# Count images after augmentation
+post_augmentation_counts = count_images_per_label(augmented_dataset)
+print("Image counts after augmentation:")
+for label, count in post_augmentation_counts.items():
     print(f"{label}: {count}")
 
 # Split dataset
-train_size = int(0.8 * len(dataset))
-test_size = len(dataset) - train_size
-train_dataset, test_dataset = random_split(dataset, [train_size, test_size])
+train_size = int(0.8 * len(augmented_dataset))
+test_size = len(augmented_dataset) - train_size
+train_dataset, test_dataset = random_split(augmented_dataset, [train_size, test_size])
 
-# Print the sizes of training and test datasets
 print(f"Train dataset length: {len(train_dataset)}, Test dataset length: {len(test_dataset)}")
 
 train_loader = DataLoader(train_dataset, batch_size=4, shuffle=True)
 test_loader = DataLoader(test_dataset, batch_size=4, shuffle=False)
 
-# Define a function to train and evaluate the model
-def train_model(trial):
-    # Load pre-trained model and modify the final layer
-    weights = models.ResNet18_Weights.DEFAULT
-    net = models.resnet18(weights=weights)
-    num_ftrs = net.fc.in_features
-    net.fc = nn.Linear(num_ftrs, len(categories))
+# Load pre-trained model and modify the final layer
+weights = models.ResNet18_Weights.DEFAULT
+net = models.resnet18(weights=weights)
+num_ftrs = net.fc.in_features
+net.fc = nn.Linear(num_ftrs, len(categories))
 
-    # Move the model to GPU
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    net.to(device)
+# Move the model to GPU
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+net.to(device)
+print(device)
 
-    # Define loss function and optimizer
-    lr = trial.suggest_float("lr", 1e-5, 1e-1, log=True)
-    momentum = trial.suggest_float("momentum", 0.5, 0.9)
+# Optuna optimization
+def objective(trial):
+    lr = trial.suggest_float('lr', 1e-5, 1e-1, log=True)
+    momentum = trial.suggest_float('momentum', 0.5, 0.9)
+    
     optimizer = optim.SGD(net.parameters(), lr=lr, momentum=momentum)
     criterion = nn.CrossEntropyLoss()
 
-    # Training loop
-    for epoch in range(5):
+    for epoch in range(3):  # Fewer epochs for faster optimization
         net.train()
         running_loss = 0.0
-        for i, data in enumerate(train_loader, 0):
-            inputs, labels = data
+        for inputs, labels in train_loader:
             inputs, labels = inputs.to(device), labels.to(device)
 
             optimizer.zero_grad()
@@ -150,60 +170,64 @@ def train_model(trial):
             loss = criterion(outputs, labels)
             loss.backward()
             optimizer.step()
-
             running_loss += loss.item()
-            if i % 100 == 99:  # Print every 100 mini-batches
-                print(f'[{epoch + 1}, {i + 1}] loss: {running_loss / 100:.3f}')
-                running_loss = 0.0
 
-    # Evaluate the model
+    net.eval()
     correct = 0
     total = 0
     with torch.no_grad():
-        net.eval()
-        for data in test_loader:
-            images, labels = data
-            outputs = net(images.to(device))
+        for inputs, labels in test_loader:
+            inputs, labels = inputs.to(device), labels.to(device)
+            outputs = net(inputs)
             _, predicted = torch.max(outputs.data, 1)
             total += labels.size(0)
-            correct += (predicted.cpu() == labels).sum().item()
-
-    accuracy = 100 * correct / total
+            correct += (predicted == labels).sum().item()
+    
+    accuracy = correct / total
     return accuracy
 
-# Optimize the hyperparameters using Optuna
-study = optuna.create_study(direction="maximize")
-study.optimize(train_model, n_trials=2)
+study = optuna.create_study(direction='maximize')
+study.optimize(objective, n_trials=10)
 
-# Print the best hyperparameters
-print("Best hyperparameters: ", study.best_params)
+best_params = study.best_params
+print("Best parameters found by Optuna:", best_params)
 
-# Load the best model and apply Grad-CAM
-def apply_grad_cam(img_path, model, transform, target_layer):
-    model.eval()
-    image = Image.open(img_path).convert("RGB")
-    input_tensor = transform(image).unsqueeze(0).to(device)
+# Training with the best parameters
+best_lr = best_params['lr']
+best_momentum = best_params['momentum']
+optimizer = optim.SGD(net.parameters(), lr=best_lr, momentum=best_momentum)
 
-    with torch.no_grad():
-        output = model(input_tensor)
-        pred = output.argmax(dim=1)
+# Define loss function and optimizer
+criterion = nn.CrossEntropyLoss()
 
-    grad_cam = GradCAM(model=model, target_layers=[target_layer], use_cuda=True)
-    grayscale_cam = grad_cam(input_tensor=input_tensor, target_category=pred.item())[0, :]
-    cam_image = show_cam_on_image(np.array(image) / 255.0, grayscale_cam, use_rgb=True)
+for epoch in range(5):  # Adjust epoch count as needed
+    net.train()
+    running_loss = 0.0
+    for i, data in enumerate(train_loader, 0):
+        inputs, labels = data
+        inputs, labels = inputs.to(device), labels.to(device)
 
-    plt.imshow(cam_image)
-    plt.show()
+        optimizer.zero_grad()
+        outputs = net(inputs)
+        loss = criterion(outputs, labels)
+        loss.backward()
+        optimizer.step()
 
-# Example usage of Grad-CAM
-best_model = models.resnet18(weights=models.ResNet18_Weights.DEFAULT)
-num_ftrs = best_model.fc.in_features
-best_model.fc = nn.Linear(num_ftrs, len(categories))
-best_model.load_state_dict(torch.load('./model_checkpoint.pth'))
-best_model.to(device)
+        running_loss += loss.item()
+        if i % 100 == 99:
+            print(f'[{epoch + 1}, {i + 1}] loss: {running_loss / 100:.3f}')
+            running_loss = 0.0
 
-apply_grad_cam('/root/stanfordData4321/stanfordData4321/images3/s-prd-398170393.jpg', best_model, transform, best_model.layer4[1].conv2)
-#"/root/stanfordData4321/stanfordData4321/images3/s-prd-398170393.jpg"
-# Save the best model
-torch.save(best_model.state_dict(), './best_model_checkpoint.pth')
-print("Best model saved to './best_model_checkpoint.pth'")
+print('Finished Training')
+
+# Evaluate the model
+net.eval()
+correct = 0
+total = 0
+with torch.no_grad():
+    for data in test_loader:
+        images, labels = data
+        outputs = net(images.to(device))
+        _, predicted = torch.max(outputs.data, 1)
+        total += labels.size(0)
+        correct += (
