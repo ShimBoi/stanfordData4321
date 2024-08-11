@@ -173,7 +173,7 @@ def train_model(trial):
 
 # Optimize the hyperparameters using Optuna
 study = optuna.create_study(direction="maximize")
-study.optimize(train_model, n_trials=10)
+study.optimize(train_model, n_trials=2)
 
 # Print the best hyperparameters
 print("Best hyperparameters: ", study.best_params)
