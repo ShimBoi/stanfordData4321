@@ -227,12 +227,14 @@ total = 0
 with torch.no_grad():
     for data in test_loader:
         images, labels = data
-        outputs = net(images.to(device))
+        images, labels = images.to(device), labels.to(device)  # Move labels to the same device as images
+        outputs = net(images)
         _, predicted = torch.max(outputs.data, 1)
         total += labels.size(0)
         correct += (predicted == labels).sum().item()
-    
+
 print(f'Accuracy on the test dataset: {100 * correct / total:.2f}%')
+
 
 # Grad-CAM visualization
 target_layers = [net.layer4[-1]]  # Last layer of the network
