@@ -187,7 +187,7 @@ def objective(trial):
     return accuracy
 
 study = optuna.create_study(direction='maximize')
-study.optimize(objective, n_trials=2)
+study.optimize(objective, n_trials= 1)
 
 best_params = study.best_params
 print("Best parameters found by Optuna:", best_params)
@@ -214,7 +214,7 @@ for epoch in range(5):  # Adjust epoch count as needed
         optimizer.step()
 
         running_loss += loss.item()
-        if i % 100 == 99:
+        if i % 2000 == 1999:
             print(f'[{epoch + 1}, {i + 1}] loss: {running_loss / 100:.3f}')
             running_loss = 0.0
 
