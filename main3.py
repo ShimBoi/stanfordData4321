@@ -230,4 +230,34 @@ with torch.no_grad():
         outputs = net(images.to(device))
         _, predicted = torch.max(outputs.data, 1)
         total += labels.size(0)
-        correct += (
+        correct += (predicted == labels).sum().item()
+    
+print(f'Accuracy on the test dataset: {100 * correct / total:.2f}%')
+
+# Grad-CAM visualization
+target_layers = [net.layer4[-1]]  # Last layer of the network
+cam = GradCAM(model=net, target_layers=target_layers, use_cuda=torch.cuda.is_available())
+
+# Display Grad-CAM for a few test images
+def visualize_gradcam(inputs, labels, predicted_labels):
+    for i in range(len(inputs)):
+        input_image = inputs[i].cpu().numpy().transpose(1, 2, 0)
+        input_image = (input_image - input_image.min()) / (input_image.max() - input_image.min())  # Normalize
+        grayscale_cam = cam(input_tensor=inputs[i:i+1], target_category=predicted_labels[i].item())
+        visualization = show_cam_on_image(input_image, grayscale_cam[0], use_rgb=True)
+        
+        plt.figure(figsize=(10, 5))
+        plt.subplot(1, 2, 1)
+        plt.imshow(input_image)
+        plt.title(f"Original - Label: {categories[labels[i].item()]}")
+        plt.subplot(1, 2, 2)
+        plt.imshow(visualization)
+        plt.title(f"Grad-CAM - Predicted: {categories[predicted_labels[i].item()]}")
+        plt.show()
+
+# Test the Grad-CAM visualization with a few images
+inputs, labels = next(iter(test_loader))
+inputs, labels = inputs.to(device), labels.to(device)
+outputs = net(inputs)
+_, predicted = torch.max(outputs, 1)
+visualize_gradcam(inputs, labels, predicted)
