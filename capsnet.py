@@ -9,6 +9,7 @@ import pandas as pd
 import os
 
 # Capsule Network components
+#ok
 
 class ConvLayer(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size, stride):
