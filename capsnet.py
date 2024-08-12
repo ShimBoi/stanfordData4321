@@ -61,7 +61,9 @@ class CapsuleNetwork(nn.Module):
         super(CapsuleNetwork, self).__init__()
         self.conv1 = ConvLayer(in_channels=3, out_channels=256, kernel_size=9, stride=1)
         self.primary_capsules = PrimaryCapsules(num_capsules=8, in_channels=256, out_channels=32, kernel_size=9, stride=2)
-        self.digit_capsules = DigitCapsules(num_capsules=num_classes, num_routes=8*6*6, in_channels=32, out_channels=16)
+        
+        # Update num_routes based on PrimaryCapsules output size
+        self.digit_capsules = DigitCapsules(num_capsules=num_classes, num_routes=8 * 6 * 6, in_channels=32, out_channels=16)
 
     def forward(self, x):
         x = self.conv1(x)
