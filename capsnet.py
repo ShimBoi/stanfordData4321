@@ -86,7 +86,7 @@ class SecondaryCapsules(nn.Module):
         self.in_channels = in_channels
         self.out_channels = out_channels
         self.route_weights = nn.Parameter(
-            torch.randn(num_routes, num_capsules, in_channels, out_channels)  # Ensure correct dimensions
+            torch.randn(num_routes, num_capsules, in_channels, out_channels)  # Initialize correctly
         )
 
     def forward(self, x):
