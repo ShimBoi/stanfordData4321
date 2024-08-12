@@ -241,12 +241,16 @@ def apply_grad_cam(img_path, model, transform, target_layer):
     image = Image.open(img_path).convert("RGB")
     input_tensor = transform(image).unsqueeze(0).to(device)
 
+    # Forward pass to get predictions
     with torch.no_grad():
         output = model(input_tensor)
         pred = output.argmax(dim=1).item()  # Convert tensor to scalar for target_category
 
+    # GradCAM doesn't require the target_category to be passed in this way anymore
     grad_cam = GradCAM(model=model, target_layers=[target_layer])
-    grayscale_cam = grad_cam(input_tensor=input_tensor, target_category=pred)[0, :]
+
+    # Generate the CAM
+    grayscale_cam = grad_cam(input_tensor=input_tensor)[0]  # No target_category argument
 
     # Resize and normalize the Grad-CAM output
     grayscale_cam = cv2.resize(grayscale_cam, (image.size[0], image.size[1]))
@@ -269,6 +273,7 @@ def apply_grad_cam(img_path, model, transform, target_layer):
 
 # Example usage of Grad-CAM
 apply_grad_cam('/root/stanfordData4321/stanfordData4321-1/images4/s-prd-618992882.jpg', net, transform, net.layer4[1].conv2)
+
 
 
 # Save model checkpoint
