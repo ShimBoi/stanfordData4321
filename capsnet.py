@@ -85,35 +85,36 @@ class SecondaryCapsules(nn.Module):
         self.num_routes = num_routes
         self.in_channels = in_channels
         self.out_channels = out_channels
+        # Shape: [num_capsules, num_routes, in_channels, out_channels]
         self.route_weights = nn.Parameter(
-            torch.randn(num_capsules, num_routes, in_channels, out_channels)  # Initialize correctly
+            torch.randn(num_capsules, num_routes, in_channels, out_channels)
         )
 
     def forward(self, x):
         batch_size = x.size(0)
         num_routes = x.size(1)
 
-        x = x.view(batch_size, num_routes, -1)  # Flatten capsules
-        x = x.unsqueeze(2)  # Add new dimension for routing weights
+        # Flatten capsule outputs
+        x = x.view(batch_size, num_routes, -1)  # Shape: [batch_size, num_routes, in_channels]
 
-        # Ensure route_weights has correct shape
-        adjusted_route_weights = self.route_weights  # Shape: [num_capsules, num_routes, in_channels, out_channels]
+        # Add new dimension for routing weights
+        x = x.unsqueeze(2)  # Shape: [batch_size, num_routes, 1, in_channels]
 
-        # Permute tensors for correct dimensions
-        x = x.permute(0, 2, 1, 3)  # [batch_size, in_channels, num_routes, 1]
-        adjusted_route_weights = adjusted_route_weights.permute(1, 0, 2, 3)  # [num_routes, num_capsules, in_channels, out_channels]
+        # Permute tensors for matrix multiplication
+        x = x.permute(0, 2, 1, 3)  # Shape: [batch_size, 1, num_routes, in_channels]
+        adjusted_route_weights = self.route_weights.permute(1, 0, 2, 3)  # Shape: [num_routes, num_capsules, in_channels, out_channels]
 
         try:
             # Perform batch matrix multiplication
-            u_hat = torch.matmul(x, adjusted_route_weights)  # Resulting shape: [batch_size, num_routes, num_capsules, out_channels]
+            u_hat = torch.matmul(x, adjusted_route_weights)  # Shape: [batch_size, num_routes, num_capsules, out_channels]
         except RuntimeError as e:
             print(f"Matrix multiplication error: {e}")
             raise
 
-        u_hat = u_hat.permute(0, 2, 1, 3)  # [batch_size, num_capsules, num_routes, out_channels]
+        u_hat = u_hat.permute(0, 2, 1, 3)  # Shape: [batch_size, num_capsules, num_routes, out_channels]
 
         b_ij = torch.zeros(batch_size, self.num_capsules, num_routes, 1).to(x.device)
-        for _ in range(3):  # Fixed range syntax
+        for _ in range(3):  # Number of routing iterations
             c_ij = torch.softmax(b_ij, dim=2)
             s_j = (c_ij * u_hat).sum(dim=2, keepdim=True)
             v_j = self.squash(s_j)
