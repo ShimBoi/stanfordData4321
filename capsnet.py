@@ -19,7 +19,6 @@ class CapsuleLayer(nn.Module):
         u_hat = torch.matmul(x, self.route_weights)  # Matrix multiplication
         
         # Dynamic routing logic
-        # For simplicity, we use a basic version of routing by agreement
         b_ij = torch.zeros(batch_size, self.num_capsules, self.num_routes).to(x.device)
         for _ in range(3):  # Routing iterations
             c_ij = F.softmax(b_ij, dim=2)
@@ -56,10 +55,17 @@ class CapsNet(nn.Module):
         x = self.pool1(F.relu(self.conv1(x)))
         x = self.pool2(F.relu(self.conv2(x)))
         
-        # Reshape for capsule layers
-        x = x.view(x.size(0), 16, 14*14)  # [batch_size, in_channels, height*width]
+        # Print shape before flattening
+        print(f"Shape before reshaping: {x.shape}")
+        
+        # Adjust this reshape based on the printed shape
+        x = x.view(x.size(0), 16, -1)  # [batch_size, in_channels, height*width]
+        
+        # Print shape after reshaping
+        print(f"Shape after reshaping: {x.shape}")
+
         x = x.permute(0, 2, 1)  # [batch_size, height*width, in_channels]
-        x = x.view(x.size(0), 32, 8, 14*14)  # [batch_size, num_capsules, out_channels, num_routes]
+        x = x.view(x.size(0), 32, 8, -1)  # Adjust based on the size and the number of capsules
         
         x = self.primary_capsules(x)
         x = self.secondary_capsules(x)
