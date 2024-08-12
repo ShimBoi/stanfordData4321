@@ -45,7 +45,10 @@ class CapsNet(nn.Module):
         self.conv2 = nn.Conv2d(8, 16, 3, padding=1)
         self.pool2 = nn.MaxPool2d(2, 2)
         
+        # Primary capsules layer
         self.primary_capsules = CapsuleLayer(num_capsules=32, in_channels=16, out_channels=8, num_routes=1152)
+        
+        # Adjust based on the size after primary capsule layer
         self.secondary_capsules = CapsuleLayer(num_capsules=num_classes, in_channels=8, out_channels=16, num_routes=32)
         
         # Final layer
@@ -55,23 +58,23 @@ class CapsNet(nn.Module):
         x = self.pool1(F.relu(self.conv1(x)))
         x = self.pool2(F.relu(self.conv2(x)))
         
-        # Print shape before flattening
+        # Print shape before reshaping
         print(f"Shape before reshaping: {x.shape}")
         
         # Adjust this reshape based on the printed shape
-        x = x.view(x.size(0), 16, -1)  # [batch_size, in_channels, height*width]
+        x = x.reshape(x.size(0), 16, -1)  # [batch_size, in_channels, height*width]
         
         # Print shape after reshaping
         print(f"Shape after reshaping: {x.shape}")
 
-        x = x.permute(0, 2, 1)  # [batch_size, height*width, in_channels]
-        x = x.view(x.size(0), 32, 8, -1)  # Adjust based on the size and the number of capsules
+        # Reshape based on the number of primary capsules
+        x = x.reshape(x.size(0), 32, 8, -1)  # [batch_size, num_capsules, in_channels, height*width]
         
         x = self.primary_capsules(x)
         x = self.secondary_capsules(x)
         
         # Flatten and pass through final layer
-        x = x.view(x.size(0), -1)
+        x = x.reshape(x.size(0), -1)
         x = self.fc(x)
         
         return x
