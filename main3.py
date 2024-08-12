@@ -88,10 +88,10 @@ def count_images_per_label(dataset):
 dataset = ExcelImageDataset('./dataRef/release_midas.xlsx', root_dirs, transform)
 
 # Count images before augmentation
-pre_augmentation_counts = count_images_per_label(dataset)
-print("Image counts before augmentation:")
-for label, count in pre_augmentation_counts.items():
-    print(f"{label}: {count}")
+#pre_augmentation_counts = count_images_per_label(dataset)
+#print("Image counts before augmentation:")
+#for label, count in pre_augmentation_counts.items():
+#    print(f"{label}: {count}")
 
 # Function to count images per label in augmented dataset
 class AugmentedImageDataset(Dataset):
@@ -126,10 +126,10 @@ augmented_dataset = AugmentedImageDataset(dataset, './augmented_images', transfo
 print(f"Total images in augmented dataset: {len(augmented_dataset)}")
 
 # Count images after augmentation
-post_augmentation_counts = count_images_per_label(augmented_dataset)
-print("Image counts after augmentation:")
-for label, count in post_augmentation_counts.items():
-    print(f"{label}: {count}")
+#post_augmentation_counts = count_images_per_label(augmented_dataset)
+#print("Image counts after augmentation:")
+#for label, count in post_augmentation_counts.items():
+#    print(f"{label}: {count}")
 
 # Split dataset
 train_size = int(0.8 * len(augmented_dataset))
@@ -188,7 +188,7 @@ def objective(trial):
     return accuracy
 
 study = optuna.create_study(direction='maximize')
-study.optimize(objective, n_trials= 1)
+study.optimize(objective, n_trials= 10)
 
 best_params = study.best_params
 print("Best parameters found by Optuna:", best_params)
@@ -201,7 +201,7 @@ optimizer = optim.SGD(net.parameters(), lr=best_lr, momentum=best_momentum)
 # Define loss function and optimizer
 criterion = nn.CrossEntropyLoss()
 
-for epoch in range(10):  # Adjust epoch count as needed
+for epoch in range(15):  # Adjust epoch count as needed
     net.train()
     running_loss = 0.0
     for i, data in enumerate(train_loader, 0):
@@ -265,7 +265,7 @@ def apply_grad_cam(img_path, model, transform, target_layer):
     plt.show()
 
 # Example usage of Grad-CAM
-apply_grad_cam('./augmented_images/7-malignant-bcc/0_original.png', net, transform, net.layer4[1].conv2)
+apply_grad_cam('/root/stanfordData4321/stanfordData4321-1/images4/s-prd-618992882.jpg', net, transform, net.layer4[1].conv2)
 
 # Save model checkpoint
 checkpoint_path = './model_checkpoint.pth'
