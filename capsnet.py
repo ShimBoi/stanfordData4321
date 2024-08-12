@@ -84,7 +84,7 @@ class SecondaryCapsules(nn.Module):
         self.num_capsules = num_capsules
         self.num_routes = num_routes
         self.route_weights = nn.Parameter(
-            torch.randn(num_capsules, num_routes, in_channels, out_channels)
+            torch.randn(num_routes, num_capsules, in_channels, out_channels)
         )
 
     def forward(self, x):
@@ -99,12 +99,11 @@ class SecondaryCapsules(nn.Module):
         print(f"Tensor shape after unsqueeze: {x.shape}")
 
         # Adjust route_weights to match the number of routes from the input tensor
-        # Ensure x's in_channels and route_weights' dimensions are compatible
-        adjusted_route_weights = self.route_weights[:self.num_capsules, :num_routes, :, :]
-        
+        adjusted_route_weights = self.route_weights[:num_routes, :, :, :]
+
         # Permute tensors to ensure proper dimensions for matmul
         x = x.permute(1, 0, 2, 3)  # [num_routes, batch_size, 1, in_channels]
-        adjusted_route_weights = adjusted_route_weights.permute(1, 0, 2, 3)  # [num_routes, num_capsules, in_channels, out_channels]
+        adjusted_route_weights = adjusted_route_weights.permute(0, 1, 3, 2)  # [num_routes, num_capsules, out_channels, in_channels]
 
         # Print shapes for debugging
         print(f"x shape for matmul: {x.shape}")
@@ -129,8 +128,6 @@ class SecondaryCapsules(nn.Module):
         norm = torch.norm(x, dim=-1, keepdim=True)
         norm_squared = norm ** 2
         return (norm_squared / (1 + norm_squared)) * (x / norm)
-
-
 
 class CapsuleNetwork(nn.Module):
     def __init__(self, num_classes):
