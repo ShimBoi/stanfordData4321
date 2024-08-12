@@ -69,7 +69,8 @@ class PrimaryCapsules(nn.Module):
 
     def forward(self, x):
         x = self.capsules(x)
-        x = x.view(x.size(0), self.num_capsules, -1)
+        x = x.view(x.size(0), self.num_capsules, self.out_channels, -1)
+        x = x.permute(0, 1, 3, 2)  # Shape: [batch_size, num_capsules, num_patches, out_channels]
         x = self.squash(x)
         return x
 
@@ -85,7 +86,6 @@ class SecondaryCapsules(nn.Module):
         self.num_routes = num_routes
         self.in_channels = in_channels
         self.out_channels = out_channels
-        # Correct initialization of route_weights
         self.route_weights = nn.Parameter(
             torch.randn(num_capsules, num_routes, in_channels, out_channels)
         )
@@ -94,28 +94,20 @@ class SecondaryCapsules(nn.Module):
         batch_size = x.size(0)
         num_routes = x.size(1)
 
-        # Flatten capsule outputs
-        x = x.view(batch_size, num_routes, -1)  # Shape: [batch_size, num_routes, in_channels]
-
-        # Add new dimension for routing weights
+        x = x.view(batch_size, num_routes, -1)  # Flatten capsule outputs
         x = x.unsqueeze(2)  # Shape: [batch_size, num_routes, 1, in_channels]
 
-        # Permute tensors for matrix multiplication
+        # Adjust shapes for matrix multiplication
         x = x.permute(0, 2, 1, 3)  # Shape: [batch_size, 1, num_routes, in_channels]
         adjusted_route_weights = self.route_weights.permute(1, 0, 2, 3)  # Shape: [num_routes, num_capsules, in_channels, out_channels]
 
-        # Debugging shapes
-        print(f"x shape for matmul: {x.shape}")
-        print(f"adjusted_route_weights shape for matmul: {adjusted_route_weights.shape}")
-
         try:
-            # Perform batch matrix multiplication
-            u_hat = torch.matmul(x, adjusted_route_weights)  # Shape: [batch_size, num_routes, num_capsules, out_channels]
+            u_hat = torch.matmul(x, adjusted_route_weights)  # Shape: [batch_size, num_capsules, num_routes, out_channels]
         except RuntimeError as e:
             print(f"Matrix multiplication error: {e}")
             raise
 
-        u_hat = u_hat.permute(0, 2, 1, 3)  # Shape: [batch_size, num_capsules, num_routes, out_channels]
+        u_hat = u_hat.permute(0, 1, 2, 3)  # Shape: [batch_size, num_capsules, num_routes, out_channels]
 
         b_ij = torch.zeros(batch_size, self.num_capsules, num_routes, 1).to(x.device)
         for _ in range(3):  # Number of routing iterations
@@ -131,12 +123,11 @@ class SecondaryCapsules(nn.Module):
         norm_squared = norm ** 2
         return (norm_squared / (1 + norm_squared)) * (x / norm)
 
-
 class CapsuleNetwork(nn.Module):
     def __init__(self, num_classes):
         super(CapsuleNetwork, self).__init__()
         self.conv_layer = nn.Conv2d(in_channels=3, out_channels=256, kernel_size=9, stride=1)
-        self.primary_capsules = PrimaryCapsules(num_capsules=8, in_channels=256, out_channels=32, kernel_size=9, stride=2)
+        self.primary_capsules = PrimaryCapsules(num_capsules=32, in_channels=256, out_channels=8, kernel_size=9, stride=2)
         self.secondary_capsules = SecondaryCapsules(
             num_capsules=num_classes, num_routes=32 * 6 * 6, in_channels=8, out_channels=16
         )
@@ -147,17 +138,15 @@ class CapsuleNetwork(nn.Module):
         x = self.secondary_capsules(x)
         return x
 
-
-
 # Training function
 def train_capsule_network():
     excel_file = '/root/stanfordData4321/stanfordData4321/dataRef/release_midas.xlsx'
     root_dirs = [
-    '/root/stanfordData4321/stanfordData4321/images2',
-    '/root/stanfordData4321/stanfordData4321/images1',
-    '/root/stanfordData4321/stanfordData4321/images3',
-    '/root/stanfordData4321/stanfordData4321/images4'
-]  # Update this with actual root directories
+        '/root/stanfordData4321/stanfordData4321/images2',
+        '/root/stanfordData4321/stanfordData4321/images1',
+        '/root/stanfordData4321/stanfordData4321/images3',
+        '/root/stanfordData4321/stanfordData4321/images4'
+    ]  # Update this with actual root directories
     transform = transforms.Compose([
         transforms.Resize((128, 128)),
         transforms.ToTensor()
@@ -182,7 +171,7 @@ def train_capsule_network():
             running_loss += loss.item() * images.size(0)
 
         epoch_loss = running_loss / len(dataloader.dataset)
-        print(f'Epoch {epoch+1}/{10}, Loss: {epoch_loss:.4f}')
+        print(f'Epoch {epoch+1}/{5}, Loss: {epoch_loss:.4f}')
 
     torch.save(model.state_dict(), 'capsule_network.pth')
 
