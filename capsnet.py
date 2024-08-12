@@ -117,8 +117,13 @@ class CapsuleNetwork(nn.Module):
 
 # Set up training
 def train_capsule_network():
-    excel_file = '/content/drive/MyDrive/midasmultimodalimagedatasetforaibasedskincancer/release_midas.xlsx'
-    root_dirs = ['/path/to/root/dir1', '/path/to/root/dir2']  # Update this with actual root directories
+    excel_file = '/root/stanfordData4321/stanfordData4321/dataRef/release_midas.xlsx'
+    root_dirs = [
+    '/root/stanfordData4321/stanfordData4321/images2',
+    '/root/stanfordData4321/stanfordData4321/images1',
+    '/root/stanfordData4321/stanfordData4321/images3',
+    '/root/stanfordData4321/stanfordData4321/images4'
+]  # Update this with actual root directories
     transform = transforms.Compose([
         transforms.Resize((128, 128)),
         transforms.ToTensor()
