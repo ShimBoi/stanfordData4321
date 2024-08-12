@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-from torch.utils.data import DataLoader, random_split
+from torch.utils.data import DataLoader, Dataset, random_split  # Import Dataset
 import torchvision.transforms as transforms
 from PIL import Image
 import pandas as pd
@@ -25,7 +25,7 @@ transform = transforms.Compose([
     transforms.Normalize((0.5,), (0.5,))
 ])
 
-class ExcelImageDataset(Dataset):
+class ExcelImageDataset(Dataset):  # Using the Dataset class
     def __init__(self, excel_file, root_dirs, transform=None):
         self.data_frame = pd.read_excel(excel_file)
         self.data_frame.iloc[:, 0] = self.data_frame.iloc[:, 0].astype(str)
@@ -64,7 +64,7 @@ class ExcelImageDataset(Dataset):
         label = torch.tensor(self.label_map.get(label, -1), dtype=torch.long)
         return image, label
 
-class AugmentedImageDataset(Dataset):
+class AugmentedImageDataset(Dataset):  # Using the Dataset class
     def __init__(self, original_dataset, augmented_dir, transform=None):
         self.original_dataset = original_dataset
         self.augmented_dir = augmented_dir
