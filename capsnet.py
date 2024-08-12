@@ -89,8 +89,7 @@ class SecondaryCapsules(nn.Module):
 
     def forward(self, x):
         batch_size = x.size(0)
-        x = x.view(batch_size, self.num_routes, -1, 1)
-        x = x.expand(-1, -1, self.num_capsules, -1)
+        x = x.view(batch_size, self.num_routes, self.num_capsules, -1)
         u_hat = torch.matmul(x, self.route_weights)
         u_hat = u_hat.permute(0, 2, 1, 3)  # [batch_size, num_capsules, num_routes, out_channels]
 
@@ -102,6 +101,12 @@ class SecondaryCapsules(nn.Module):
             b_ij = b_ij + (u_hat * v_j).sum(dim=-1, keepdim=True)
 
         return v_j.squeeze(2)
+
+    def squash(self, x):
+        norm = torch.norm(x, dim=-1, keepdim=True)
+        norm_squared = norm ** 2
+        return (norm_squared / (1 + norm_squared)) * (x / norm)
+
 
     def squash(self, x):
         norm = torch.norm(x, dim=-1, keepdim=True)
@@ -146,7 +151,7 @@ def train_capsule_network():
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.parameters(), lr=1e-3)
 
-    for epoch in range(10):  # Number of epochs
+    for epoch in range(5):  # Number of epochs
         model.train()
         running_loss = 0.0
         for images, labels in dataloader:
