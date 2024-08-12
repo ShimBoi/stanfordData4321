@@ -91,9 +91,8 @@ class SecondaryCapsules(nn.Module):
         batch_size = x.size(0)
         print(f"Input tensor shape before view: {x.shape}")
         
-        # Calculate the correct shape dimensions for view
-        x = x.view(batch_size, self.num_routes, -1)  # Adjust the view to match tensor size
-        
+        # Adjusting the view operation to match tensor size
+        x = x.view(batch_size, self.num_routes, -1)  # self.num_routes is likely 8
         print(f"Tensor shape after view: {x.shape}")
         
         x = x.unsqueeze(2)  # Adding a new dimension
@@ -116,8 +115,6 @@ class SecondaryCapsules(nn.Module):
         norm = torch.norm(x, dim=-1, keepdim=True)
         norm_squared = norm ** 2
         return (norm_squared / (1 + norm_squared)) * (x / norm)
-
-
 
 
 class CapsuleNetwork(nn.Module):
