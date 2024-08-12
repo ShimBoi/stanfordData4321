@@ -18,9 +18,9 @@ class ExcelImageDataset(Dataset):
         self.image_paths = []
         self.labels = []
         for idx, row in self.data.iterrows():
-            img_path = os.path.join(self.root_dir, row['midas_path'])
-            if os.path.exists(img_path):
-                self.image_paths.append(img_path)
+            img_path = row['midas_path']
+            if isinstance(img_path, str) and os.path.exists(os.path.join(self.root_dir, img_path)):
+                self.image_paths.append(os.path.join(self.root_dir, img_path))
                 self.labels.append(row['clinical_impression_1'])
 
         print(f"Total valid paths found: {len(self.image_paths)}")
@@ -41,6 +41,7 @@ class ExcelImageDataset(Dataset):
             image = self.transform(image)
 
         return image, self.label_map[label]
+
 
 # Define the Primary Capsule Layer
 class PrimaryCapsules(nn.Module):
