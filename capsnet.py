@@ -86,25 +86,26 @@ class SecondaryCapsules(nn.Module):
         self.in_channels = in_channels
         self.out_channels = out_channels
         self.route_weights = nn.Parameter(
-            torch.randn(num_capsules, num_routes, in_channels, out_channels)  # Correctly initialized
+            torch.randn(num_capsules, num_routes, in_channels, out_channels)  # Initialize correctly
         )
 
     def forward(self, x):
-        batch_size = x.size(0)  # Change dimension to match [batch_size, num_routes, in_channels]
+        batch_size = x.size(0)
         num_routes = x.size(1)
 
         x = x.view(batch_size, num_routes, -1)  # Flatten capsules
         x = x.unsqueeze(2)  # Add new dimension for routing weights
 
-        # No need to slice route_weights here if num_routes is consistent
-        adjusted_route_weights = self.route_weights  # Ensure this is correctly sized
+        # Ensure route_weights has correct shape
+        adjusted_route_weights = self.route_weights  # Shape: [num_capsules, num_routes, in_channels, out_channels]
 
+        # Permute tensors for correct dimensions
         x = x.permute(0, 2, 1, 3)  # [batch_size, in_channels, num_routes, 1]
-        adjusted_route_weights = adjusted_route_weights.permute(1, 0, 3, 2)  # [num_routes, num_capsules, out_channels, in_channels]
+        adjusted_route_weights = adjusted_route_weights.permute(1, 0, 2, 3)  # [num_routes, num_capsules, in_channels, out_channels]
 
         try:
             # Perform batch matrix multiplication
-            u_hat = torch.matmul(x, adjusted_route_weights)  # [batch_size, num_routes, num_capsules, out_channels]
+            u_hat = torch.matmul(x, adjusted_route_weights)  # Resulting shape: [batch_size, num_routes, num_capsules, out_channels]
         except RuntimeError as e:
             print(f"Matrix multiplication error: {e}")
             raise
@@ -124,7 +125,6 @@ class SecondaryCapsules(nn.Module):
         norm = torch.norm(x, dim=-1, keepdim=True)
         norm_squared = norm ** 2
         return (norm_squared / (1 + norm_squared)) * (x / norm)
-
 
 class CapsuleNetwork(nn.Module):
     def __init__(self, num_classes):
