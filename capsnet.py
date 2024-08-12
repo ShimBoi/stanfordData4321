@@ -93,7 +93,7 @@ class AugmentedImageDataset(Dataset):  # Using the Dataset class
 
 # Define your CapsNet model
 class PrimaryCapsuleLayer(nn.Module):
-    def __init__(self, num_capsules, in_channels, out_channels, kernel_size, stride=1):
+    def __init__(self, num_capsules, in_channels, out_channels, kernel_size, stride=2):
         super(PrimaryCapsuleLayer, self).__init__()
         self.num_capsules = num_capsules
         self.out_channels = out_channels
@@ -101,8 +101,9 @@ class PrimaryCapsuleLayer(nn.Module):
 
     def forward(self, x):
         x = self.capsules(x)
-        x = x.view(x.size(0), self.num_capsules, self.out_channels, -1)
-        x = x.permute(0, 3, 1, 2)  # Rearrange to [batch_size, num_routes, num_capsules, out_channels]
+        batch_size = x.size(0)
+        x = x.view(batch_size, self.num_capsules, self.out_channels, -1)
+        x = x.permute(0, 3, 1, 2)  # [batch_size, num_routes, num_capsules, out_channels]
         norms = torch.norm(x, dim=-1, keepdim=True)
         squash = (norms**2 / (1 + norms**2)) / (1 + norms**2)
         return squash * x / norms
@@ -112,18 +113,15 @@ class CapsuleLayer(nn.Module):
         super(CapsuleLayer, self).__init__()
         self.num_capsules = num_capsules
         self.routing_iterations = routing_iterations
-        self.in_channels = in_channels
-        self.out_channels = out_channels
-        
         self.route_weights = nn.Parameter(torch.randn(num_capsules, num_routes, in_channels, out_channels))
 
     def forward(self, x):
         batch_size = x.size(0)
-        x = x.view(batch_size, -1, self.in_channels)
-        
-        u_hat = torch.matmul(x.unsqueeze(2), self.route_weights)
+        x = x.view(batch_size, -1, x.size(-2), x.size(-1))  # Ensure the input is in correct shape
+
+        u_hat = torch.matmul(x.unsqueeze(2), self.route_weights)  # Shape: [batch_size, num_routes, num_capsules, out_channels]
         u_hat = u_hat.squeeze(-2)
-        
+
         b_ij = torch.zeros_like(u_hat[:, :, :, 0], device=x.device)
         
         for iteration in range(self.routing_iterations):
@@ -139,16 +137,19 @@ class CapsuleLayer(nn.Module):
 class CapsNet(nn.Module):
     def __init__(self, num_classes):
         super(CapsNet, self).__init__()
-        self.primary_capsules = PrimaryCapsuleLayer(num_capsules=8, in_channels=3, out_channels=32, kernel_size=9, stride=2)
-        self.secondary_capsules = CapsuleLayer(num_capsules=num_classes, in_channels=32, out_channels=16, num_routes=8 * 8 * 8)
+        self.primary_capsules = PrimaryCapsuleLayer(num_capsules=8, in_channels=3, out_channels=32, kernel_size=9)
+        # Calculate the correct number of routes here based on your input image size and the PrimaryCapsuleLayer output.
+        num_routes = 8 * 8 * 32  # This needs to match the flattened output of the primary capsule layer
+        self.secondary_capsules = CapsuleLayer(num_capsules=num_classes, in_channels=32, out_channels=16, num_routes=num_routes)
         self.fc = nn.Linear(16 * num_classes, num_classes)
-    
+
     def forward(self, x):
         x = self.primary_capsules(x)
         x = self.secondary_capsules(x)
         x = x.view(x.size(0), -1)
         x = self.fc(x)
         return x
+
 
 
 # Initialize dataset and model
