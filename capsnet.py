@@ -128,7 +128,7 @@ def train_capsule_network():
 
     dataset = CustomDataset(
         excel_file='/root/stanfordData4321/stanfordData4321/dataRef/release_midas.xlsx',
-        rroot_dirs = [
+        root_dirs = [
     '/root/stanfordData4321/stanfordData4321/images2',
     '/root/stanfordData4321/stanfordData4321/images1',
     '/root/stanfordData4321/stanfordData4321/images3',
