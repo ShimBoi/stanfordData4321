@@ -26,11 +26,14 @@ class PrimaryCapsules(nn.Module):
             for _ in range(num_capsules)
         ])
         self.out_channels = out_channels
+        self.num_capsules = num_capsules
 
     def forward(self, x):
         u = [capsule(x) for capsule in self.capsules]
         u = torch.stack(u, dim=1)
         batch_size = x.size(0)
+        u = u.view(batch_size, self.num_capsules, -1, self.out_channels)
+        u = u.permute(0, 2, 1, 3).contiguous()
         u = u.view(batch_size, -1, self.out_channels)
         return u
 
@@ -42,6 +45,8 @@ class DigitCapsules(nn.Module):
         self.weights = nn.Parameter(torch.randn(num_capsules, num_routes, in_channels, out_channels))
 
     def forward(self, x):
+        batch_size = x.size(0)
+        x = x.view(batch_size, -1, 1, x.size(-1)).repeat(1, 1, self.num_capsules, 1)
         u = torch.matmul(x[:, None, :, :, None], self.weights)
         u = u.squeeze(-1).permute(0, 3, 1, 2)
         return self.squash(u.sum(dim=2))
@@ -56,7 +61,7 @@ class CapsuleNetwork(nn.Module):
         super(CapsuleNetwork, self).__init__()
         self.conv1 = ConvLayer(in_channels=3, out_channels=256, kernel_size=9, stride=1)
         self.primary_capsules = PrimaryCapsules(num_capsules=8, in_channels=256, out_channels=32, kernel_size=9, stride=2)
-        self.digit_capsules = DigitCapsules(num_capsules=num_classes, num_routes=32*6*6, in_channels=8, out_channels=16)
+        self.digit_capsules = DigitCapsules(num_capsules=num_classes, num_routes=8*6*6, in_channels=32, out_channels=16)
 
     def forward(self, x):
         x = self.conv1(x)
