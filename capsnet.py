@@ -86,7 +86,7 @@ class SecondaryCapsules(nn.Module):
         self.num_routes = num_routes
         self.in_channels = in_channels
         self.out_channels = out_channels
-        # Initialize route_weights with the correct dimensions
+        # Initialize route_weights with correct dimensions
         self.route_weights = nn.Parameter(
             torch.randn(num_capsules, num_routes, in_channels, out_channels)
         )
@@ -95,9 +95,12 @@ class SecondaryCapsules(nn.Module):
         batch_size = x.size(0)
         num_routes = x.size(1)
         in_channels = x.size(2)
+        # Adjust the number of routes based on the flattened size from primary capsules
+        num_routes = x.size(1) * x.size(2) * x.size(3)
 
         # Flatten capsule outputs
         x = x.view(batch_size, num_routes, in_channels)  # Shape: [batch_size, num_routes, in_channels]
+
         x = x.unsqueeze(2)  # Shape: [batch_size, num_routes, 1, in_channels]
 
         # Permute tensors for matrix multiplication
@@ -130,6 +133,7 @@ class SecondaryCapsules(nn.Module):
         norm = torch.norm(x, dim=-1, keepdim=True)
         norm_squared = norm ** 2
         return (norm_squared / (1 + norm_squared)) * (x / norm)
+
 
 
 class CapsuleNetwork(nn.Module):
