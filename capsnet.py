@@ -86,7 +86,7 @@ class SecondaryCapsules(nn.Module):
         self.in_channels = in_channels
         self.out_channels = out_channels
         self.route_weights = nn.Parameter(
-            torch.randn(num_routes, num_capsules, out_channels, in_channels)  # Corrected dimensions
+            torch.randn(num_routes, num_capsules, out_channels, in_channels)  # Ensure correct dimensions
         )
 
     def forward(self, x):
@@ -96,16 +96,16 @@ class SecondaryCapsules(nn.Module):
         print(f"Input tensor shape before view: {x.shape}")
         x = x.view(batch_size, num_routes, -1)  # Flatten the capsule outputs
         print(f"Tensor shape after view: {x.shape}")
-        
-        x = x.unsqueeze(2)  # Adding a new dimension
+
+        x = x.unsqueeze(2)  # Add new dimension for compatibility
         print(f"Tensor shape after unsqueeze: {x.shape}")
 
-        # Adjust route_weights to match the number of routes from the input tensor
+        # Adjust route_weights to match the number of routes
         adjusted_route_weights = self.route_weights[:num_routes, :, :, :]
 
-        # Permute tensors to ensure proper dimensions for matmul
+        # Permute tensors for correct dimensions
         x = x.permute(1, 0, 2, 3)  # [num_routes, batch_size, 1, in_channels]
-        adjusted_route_weights = adjusted_route_weights.permute(0, 1, 3, 2)  # [num_routes, num_capsules, out_channels, in_channels]
+        adjusted_route_weights = adjusted_route_weights.permute(0, 1, 3, 2)  # [num_routes, num_capsules, in_channels, out_channels]
 
         # Print shapes for debugging
         print(f"x shape for matmul: {x.shape}")
@@ -118,7 +118,7 @@ class SecondaryCapsules(nn.Module):
         print(f"u_hat shape after permute: {u_hat.shape}")
 
         b_ij = torch.zeros(batch_size, self.num_capsules, num_routes, 1).to(x.device)
-        for _ in range(3):  # Corrected range syntax
+        for _ in range(3):  # Fixed range syntax
             c_ij = torch.softmax(b_ij, dim=2)
             s_j = (c_ij * u_hat).sum(dim=2, keepdim=True)
             v_j = self.squash(s_j)
@@ -130,7 +130,6 @@ class SecondaryCapsules(nn.Module):
         norm = torch.norm(x, dim=-1, keepdim=True)
         norm_squared = norm ** 2
         return (norm_squared / (1 + norm_squared)) * (x / norm)
-
 
 
 class CapsuleNetwork(nn.Module):
