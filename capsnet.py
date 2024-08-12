@@ -7,7 +7,6 @@ from torchvision import transforms
 from PIL import Image
 import pandas as pd
 import os
-import numpy as np
 
 # Capsule Network components
 
@@ -26,11 +25,14 @@ class PrimaryCapsules(nn.Module):
             nn.Conv2d(in_channels, out_channels, kernel_size, stride) 
             for _ in range(num_capsules)
         ])
+        self.out_channels = out_channels
 
     def forward(self, x):
         u = [capsule(x) for capsule in self.capsules]
         u = torch.stack(u, dim=1)
-        return u.view(x.size(0), -1, u.size(1))
+        batch_size = x.size(0)
+        u = u.view(batch_size, -1, self.out_channels)
+        return u
 
 class DigitCapsules(nn.Module):
     def __init__(self, num_capsules, num_routes, in_channels, out_channels):
