@@ -102,6 +102,7 @@ class PrimaryCapsuleLayer(nn.Module):
     def forward(self, x):
         x = self.capsules(x)
         x = x.view(x.size(0), self.num_capsules, self.out_channels, -1)
+        x = x.permute(0, 3, 1, 2)  # Rearrange to [batch_size, num_routes, num_capsules, out_channels]
         norms = torch.norm(x, dim=-1, keepdim=True)
         squash = (norms**2 / (1 + norms**2)) / (1 + norms**2)
         return squash * x / norms
@@ -117,7 +118,10 @@ class CapsuleLayer(nn.Module):
         self.route_weights = nn.Parameter(torch.randn(num_capsules, num_routes, in_channels, out_channels))
 
     def forward(self, x):
-        u_hat = torch.matmul(x.unsqueeze(1), self.route_weights)
+        batch_size = x.size(0)
+        x = x.view(batch_size, -1, self.in_channels)
+        
+        u_hat = torch.matmul(x.unsqueeze(2), self.route_weights)
         u_hat = u_hat.squeeze(-2)
         
         b_ij = torch.zeros_like(u_hat[:, :, :, 0], device=x.device)
@@ -136,7 +140,7 @@ class CapsNet(nn.Module):
     def __init__(self, num_classes):
         super(CapsNet, self).__init__()
         self.primary_capsules = PrimaryCapsuleLayer(num_capsules=8, in_channels=3, out_channels=32, kernel_size=9, stride=2)
-        self.secondary_capsules = CapsuleLayer(num_capsules=num_classes, in_channels=32, out_channels=16, num_routes=8 * 8)
+        self.secondary_capsules = CapsuleLayer(num_capsules=num_classes, in_channels=32, out_channels=16, num_routes=8 * 8 * 8)
         self.fc = nn.Linear(16 * num_classes, num_classes)
     
     def forward(self, x):
