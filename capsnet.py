@@ -91,45 +91,45 @@ class SecondaryCapsules(nn.Module):
             torch.randn(num_capsules, num_routes, in_channels, out_channels)
         )
 
-   def forward(self, x):
-    batch_size = x.size(0)
-    num_routes = x.size(1)
-    in_channels = x.size(2)
-    # Adjust the number of routes based on the flattened size from primary capsules
-    num_routes = x.size(1) * x.size(2) * x.size(3)
+    def forward(self, x):
+        batch_size = x.size(0)
+        num_routes = x.size(1)
+        in_channels = x.size(2)
+        # Adjust the number of routes based on the flattened size from primary capsules
+        num_routes = x.size(1) * x.size(2) * x.size(3)
 
-    print(f"Initial x shape: {x.shape}")
-    # Flatten capsule outputs
-    x = x.view(batch_size, num_routes, in_channels)  # Shape: [batch_size, num_routes, in_channels]
-    print(f"After view x shape: {x.shape}")
+        print(f"Initial x shape: {x.shape}")
+        # Flatten capsule outputs
+        x = x.view(batch_size, num_routes, in_channels)  # Shape: [batch_size, num_routes, in_channels]
+        print(f"After view x shape: {x.shape}")
 
-    x = x.unsqueeze(2)  # Shape: [batch_size, num_routes, 1, in_channels]
-    print(f"After unsqueeze x shape: {x.shape}")
+        x = x.unsqueeze(2)  # Shape: [batch_size, num_routes, 1, in_channels]
+        print(f"After unsqueeze x shape: {x.shape}")
 
-    # Permute tensors for matrix multiplication
-    x = x.permute(0, 2, 1, 3)  # Shape: [batch_size, 1, num_routes, in_channels]
-    adjusted_route_weights = self.route_weights.permute(1, 0, 2, 3)  # Shape: [num_routes, num_capsules, in_channels, out_channels]
+        # Permute tensors for matrix multiplication
+        x = x.permute(0, 2, 1, 3)  # Shape: [batch_size, 1, num_routes, in_channels]
+        adjusted_route_weights = self.route_weights.permute(1, 0, 2, 3)  # Shape: [num_routes, num_capsules, in_channels, out_channels]
     
-    print(f"x shape for matmul: {x.shape}")
-    print(f"adjusted_route_weights shape for matmul: {adjusted_route_weights.shape}")
+        print(f"x shape for matmul: {x.shape}")
+        print(f"adjusted_route_weights shape for matmul: {adjusted_route_weights.shape}")
 
-    try:
-        # Perform batch matrix multiplication
-        u_hat = torch.matmul(x, adjusted_route_weights)  # Shape: [batch_size, num_capsules, num_routes, out_channels]
-    except RuntimeError as e:
-        print(f"Matrix multiplication error: {e}")
-        raise
+        try:
+            # Perform batch matrix multiplication
+            u_hat = torch.matmul(x, adjusted_route_weights)  # Shape: [batch_size, num_capsules, num_routes, out_channels]
+        except RuntimeError as e:
+            print(f"Matrix multiplication error: {e}")
+            raise
 
-    u_hat = u_hat.permute(0, 1, 2, 3)  # Shape: [batch_size, num_capsules, num_routes, out_channels]
+        u_hat = u_hat.permute(0, 1, 2, 3)  # Shape: [batch_size, num_capsules, num_routes, out_channels]
 
-    b_ij = torch.zeros(batch_size, self.num_capsules, num_routes, 1).to(x.device)
-    for _ in range(3):  # Number of routing iterations
-        c_ij = torch.softmax(b_ij, dim=2)
-        s_j = (c_ij * u_hat).sum(dim=2, keepdim=True)
-        v_j = self.squash(s_j)
-        b_ij = b_ij + (u_hat * v_j).sum(dim=-1, keepdim=True)
+        b_ij = torch.zeros(batch_size, self.num_capsules, num_routes, 1).to(x.device)
+        for _ in range(3):  # Number of routing iterations
+            c_ij = torch.softmax(b_ij, dim=2)
+            s_j = (c_ij * u_hat).sum(dim=2, keepdim=True)
+            v_j = self.squash(s_j)
+            b_ij = b_ij + (u_hat * v_j).sum(dim=-1, keepdim=True)
 
-    return v_j.squeeze(2)
+        return v_j.squeeze(2)
 
 
     def squash(self, x):
