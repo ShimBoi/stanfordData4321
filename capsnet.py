@@ -110,7 +110,7 @@ class CapsuleNetwork(nn.Module):
 
 # Set up training
 def train_capsule_network():
-    excel_file = '/content/drive/MyDrive/midasmultimodalimagedatasetforaibasedskincancer/release_midas.xlsx'
+    excel_file = '/root/stanfordData4321/stanfordData4321/dataRef/release_midas.xlsx'
     root_dir = '/path/to/images'  # Update this path to where your images are stored
 
     # Define your transformations
