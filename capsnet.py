@@ -86,10 +86,10 @@ def count_images_per_label(dataset):
 dataset = ExcelImageDataset('./dataRef/release_midas.xlsx', root_dirs, transform)
 
 # Count images before augmentation
-pre_augmentation_counts = count_images_per_label(dataset)
-print("Image counts before augmentation:")
-for label, count in pre_augmentation_counts.items():
-    print(f"{label}: {count}")
+#pre_augmentation_counts = count_images_per_label(dataset)
+#print("Image counts before augmentation:")
+#for label, count in pre_augmentation_counts.items():
+#    print(f"{label}: {count}")
 
 # Function to count images per label in augmented dataset
 class AugmentedImageDataset(Dataset):
@@ -124,10 +124,10 @@ augmented_dataset = AugmentedImageDataset(dataset, './augmented_images', transfo
 print(f"Total images in augmented dataset: {len(augmented_dataset)}")
 
 # Count images after augmentation
-post_augmentation_counts = count_images_per_label(augmented_dataset)
-print("Image counts after augmentation:")
-for label, count in post_augmentation_counts.items():
-    print(f"{label}: {count}")
+#post_augmentation_counts = count_images_per_label(augmented_dataset)
+#print("Image counts after augmentation:")
+#for label, count in post_augmentation_counts.items():
+    #print(f"{label}: {count}")
 
 # Split dataset
 train_size = int(0.8 * len(augmented_dataset))
