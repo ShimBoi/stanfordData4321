@@ -81,42 +81,49 @@ class PrimaryCapsules(nn.Module):
 class SecondaryCapsules(nn.Module):
     def __init__(self, num_capsules, num_routes, in_channels, out_channels):
         super(SecondaryCapsules, self).__init__()
+        self.num_capsules = num_capsules
         self.num_routes = num_routes
         self.route_weights = nn.Parameter(
-            torch.randn(1, num_routes, num_capsules, in_channels, out_channels)
+            torch.randn(num_capsules, num_routes, in_channels, out_channels)
         )
 
     def forward(self, x):
         batch_size = x.size(0)
-        x = x.unsqueeze(2).expand(-1, -1, self.num_routes, -1).unsqueeze(4)
-        u_hat = torch.matmul(x, self.route_weights).squeeze(4)
+        x = x.view(batch_size, self.num_routes, -1, 1)
+        x = x.expand(-1, -1, self.num_capsules, -1)
+        u_hat = torch.matmul(x, self.route_weights)
+        u_hat = u_hat.permute(0, 2, 1, 3)  # [batch_size, num_capsules, num_routes, out_channels]
 
-        b_ij = torch.zeros(1, self.num_routes, self.num_capsules, 1).to(x.device)
+        b_ij = torch.zeros(batch_size, self.num_capsules, self.num_routes, 1).to(x.device)
         for _ in range(3):
             c_ij = torch.softmax(b_ij, dim=2)
-            s_j = (c_ij * u_hat).sum(dim=1, keepdim=True)
+            s_j = (c_ij * u_hat).sum(dim=2, keepdim=True)
             v_j = self.squash(s_j)
             b_ij = b_ij + (u_hat * v_j).sum(dim=-1, keepdim=True)
 
-        return v_j.squeeze(1)
+        return v_j.squeeze(2)
 
     def squash(self, x):
         norm = torch.norm(x, dim=-1, keepdim=True)
         norm_squared = norm ** 2
         return (norm_squared / (1 + norm_squared)) * (x / norm)
 
+
 class CapsuleNetwork(nn.Module):
     def __init__(self, num_classes):
         super(CapsuleNetwork, self).__init__()
         self.conv_layer = nn.Conv2d(in_channels=3, out_channels=256, kernel_size=9, stride=1)
         self.primary_capsules = PrimaryCapsules(num_capsules=8, in_channels=256, out_channels=32, kernel_size=9, stride=2)
-        self.secondary_capsules = SecondaryCapsules(num_capsules=num_classes, num_routes=32 * 6 * 6, in_channels=8, out_channels=16)
+        self.secondary_capsules = SecondaryCapsules(
+            num_capsules=num_classes, num_routes=32 * 6 * 6, in_channels=8, out_channels=16
+        )
 
     def forward(self, x):
         x = torch.relu(self.conv_layer(x))
         x = self.primary_capsules(x)
         x = self.secondary_capsules(x)
         return x
+
 
 # Training function
 def train_capsule_network():
