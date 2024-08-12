@@ -9,44 +9,43 @@ import os
 
 # Define custom dataset class to load images and corresponding labels from Excel and folder structure
 class ExcelImageDataset(Dataset):
-    def __init__(self, excel_file, root_dir, transform=None):
-        self.data = pd.read_excel(excel_file)
-        self.root_dir = root_dir
+    def __init__(self, excel_file, root_dirs, transform=None):
+        self.data_frame = pd.read_excel(excel_file)
+        self.data_frame.iloc[:, 0] = self.data_frame.iloc[:, 0].astype(str)
+        self.root_dirs = root_dirs
         self.transform = transform
+        self.label_map = {label: idx for idx, label in enumerate(categories)}
+        self.image_paths = self._get_image_paths()
 
-        # Filter out valid paths and corresponding labels
-        self.image_paths = []
-        self.labels = []
-        for idx, row in self.data.iterrows():
-            img_path = row['midas_path']
-            if isinstance(img_path, str):
-                full_path = os.path.join(self.root_dir, img_path)
-                if os.path.exists(full_path):
-                    self.image_paths.append(full_path)
-                    self.labels.append(row['clinical_impression_1'])
-                else:
-                    print(f"Path does not exist: {full_path}")
-            else:
-                print(f"Invalid path: {img_path}")
-
-        print(f"Total valid paths found: {len(self.image_paths)}")
-
-        # Convert labels to numerical format
-        self.categories = sorted(list(set(self.labels)))
-        self.label_map = {label: idx for idx, label in enumerate(self.categories)}
+    def _get_image_paths(self):
+        valid_paths = []
+        for idx, row in self.data_frame.iterrows():
+            img_found = False
+            for root_dir in self.root_dirs:
+                img_name = os.path.join(root_dir, row['midas_file_name'])
+                if os.path.isfile(img_name):
+                    label = row['clinical_impression_1']
+                    if label not in self.label_map:
+                        print(f"Warning: Label '{label}' not in label_map.")
+                        continue
+                    valid_paths.append((img_name, label))
+                    img_found = True
+                    break
+            if not img_found:
+                print(f"Warning: Image {row['midas_file_name']} not found in any root directory.")
+        print(f"Total valid paths found: {len(valid_paths)}")
+        return valid_paths
 
     def __len__(self):
         return len(self.image_paths)
 
     def __getitem__(self, idx):
-        img_path = self.image_paths[idx]
-        image = Image.open(img_path).convert('RGB')
-        label = self.labels[idx]
-
+        img_name, label = self.image_paths[idx]
+        image = Image.open(img_name).convert("RGB")
         if self.transform:
             image = self.transform(image)
-
-        return image, self.label_map[label]
+        label = torch.tensor(self.label_map.get(label, -1), dtype=torch.long)
+        return image, label
 
 
 
