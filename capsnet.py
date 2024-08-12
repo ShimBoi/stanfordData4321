@@ -89,7 +89,8 @@ class SecondaryCapsules(nn.Module):
 
     def forward(self, x):
         batch_size = x.size(0)
-        x = x.view(batch_size, self.num_routes, self.num_capsules, -1)
+        x = x.view(batch_size, self.num_routes, -1)  # Adjusting the view to match tensor size
+        x = x.unsqueeze(2)  # Adding a new dimension
         u_hat = torch.matmul(x, self.route_weights)
         u_hat = u_hat.permute(0, 2, 1, 3)  # [batch_size, num_capsules, num_routes, out_channels]
 
@@ -108,11 +109,6 @@ class SecondaryCapsules(nn.Module):
         return (norm_squared / (1 + norm_squared)) * (x / norm)
 
 
-    def squash(self, x):
-        norm = torch.norm(x, dim=-1, keepdim=True)
-        norm_squared = norm ** 2
-        return (norm_squared / (1 + norm_squared)) * (x / norm)
-
 
 class CapsuleNetwork(nn.Module):
     def __init__(self, num_classes):
@@ -128,6 +124,7 @@ class CapsuleNetwork(nn.Module):
         x = self.primary_capsules(x)
         x = self.secondary_capsules(x)
         return x
+
 
 
 # Training function
