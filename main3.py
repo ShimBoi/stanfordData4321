@@ -188,7 +188,7 @@ def objective(trial):
     return accuracy
 
 study = optuna.create_study(direction='maximize')
-study.optimize(objective, n_trials=  )
+study.optimize(objective, n_trials=1)
 
 best_params = study.best_params
 print("Best parameters found by Optuna:", best_params)
