@@ -94,22 +94,27 @@ class SecondaryCapsules(nn.Module):
         batch_size = x.size(0)
         num_routes = x.size(1)
         in_channels = x.size(2)
-        
-        # Flatten capsule outputs
-        x = x.reshape(batch_size, num_routes, -1)  # Use reshape instead of view
-        x = x.unsqueeze(2)  # Shape: [batch_size, num_routes, 1, in_channels]
+        out_channels = self.out_channels
+
+        # Flatten capsule outputs and reshape
+        x = x.reshape(batch_size, num_routes, -1)  # [batch_size, num_routes, in_channels]
+        x = x.unsqueeze(2)  # [batch_size, num_routes, 1, in_channels]
 
         # Adjust shapes for matrix multiplication
-        x = x.permute(0, 2, 1, 3)  # Shape: [batch_size, 1, num_routes, in_channels]
-        adjusted_route_weights = self.route_weights.permute(1, 0, 2, 3)  # Shape: [num_routes, num_capsules, in_channels, out_channels]
+        x = x.permute(0, 2, 1, 3)  # [batch_size, 1, num_routes, in_channels]
+        adjusted_route_weights = self.route_weights.permute(1, 0, 2, 3)  # [num_routes, num_capsules, in_channels, out_channels]
+
+        # Debugging shapes
+        print(f"x shape for matmul: {x.shape}")
+        print(f"adjusted_route_weights shape for matmul: {adjusted_route_weights.shape}")
 
         try:
-            u_hat = torch.matmul(x, adjusted_route_weights)  # Shape: [batch_size, num_capsules, num_routes, out_channels]
+            u_hat = torch.matmul(x, adjusted_route_weights)  # [batch_size, num_capsules, num_routes, out_channels]
         except RuntimeError as e:
             print(f"Matrix multiplication error: {e}")
             raise
 
-        u_hat = u_hat.permute(0, 1, 2, 3)  # Shape: [batch_size, num_capsules, num_routes, out_channels]
+        u_hat = u_hat.permute(0, 1, 2, 3)  # [batch_size, num_capsules, num_routes, out_channels]
 
         b_ij = torch.zeros(batch_size, self.num_capsules, num_routes, 1).to(x.device)
         for _ in range(3):  # Number of routing iterations
