@@ -85,7 +85,7 @@ class SecondaryCapsules(nn.Module):
         self.num_routes = num_routes
         self.in_channels = in_channels
         self.out_channels = out_channels
-        # Shape: [num_capsules, num_routes, in_channels, out_channels]
+        # Correct initialization of route_weights
         self.route_weights = nn.Parameter(
             torch.randn(num_capsules, num_routes, in_channels, out_channels)
         )
@@ -103,6 +103,10 @@ class SecondaryCapsules(nn.Module):
         # Permute tensors for matrix multiplication
         x = x.permute(0, 2, 1, 3)  # Shape: [batch_size, 1, num_routes, in_channels]
         adjusted_route_weights = self.route_weights.permute(1, 0, 2, 3)  # Shape: [num_routes, num_capsules, in_channels, out_channels]
+
+        # Debugging shapes
+        print(f"x shape for matmul: {x.shape}")
+        print(f"adjusted_route_weights shape for matmul: {adjusted_route_weights.shape}")
 
         try:
             # Perform batch matrix multiplication
@@ -126,6 +130,7 @@ class SecondaryCapsules(nn.Module):
         norm = torch.norm(x, dim=-1, keepdim=True)
         norm_squared = norm ** 2
         return (norm_squared / (1 + norm_squared)) * (x / norm)
+
 
 class CapsuleNetwork(nn.Module):
     def __init__(self, num_classes):
