@@ -86,7 +86,7 @@ class SecondaryCapsules(nn.Module):
         self.in_channels = in_channels
         self.out_channels = out_channels
         self.route_weights = nn.Parameter(
-            torch.randn(num_routes, num_capsules, out_channels, in_channels)  # Ensure correct dimensions
+            torch.randn(num_routes, num_capsules, in_channels, out_channels)  # Ensure correct dimensions
         )
 
     def forward(self, x):
@@ -109,7 +109,7 @@ class SecondaryCapsules(nn.Module):
 
         # Permute tensors for correct dimensions
         x = x.permute(0, 1, 3, 2)  # [num_routes, batch_size, in_channels, 1]
-        adjusted_route_weights = adjusted_route_weights.permute(0, 1, 3, 2)  # [num_routes, num_capsules, in_channels, out_channels]
+        adjusted_route_weights = adjusted_route_weights.permute(0, 1, 3, 2)  # [num_routes, num_capsules, out_channels, in_channels]
 
         # Print permuted shapes for debugging
         print(f"x shape after permute: {x.shape}")
