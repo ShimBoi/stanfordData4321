@@ -93,8 +93,10 @@ class SecondaryCapsules(nn.Module):
     def forward(self, x):
         batch_size = x.size(0)
         num_routes = x.size(1)
-
-        x = x.view(batch_size, num_routes, -1)  # Flatten capsule outputs
+        in_channels = x.size(2)
+        
+        # Flatten capsule outputs
+        x = x.reshape(batch_size, num_routes, -1)  # Use reshape instead of view
         x = x.unsqueeze(2)  # Shape: [batch_size, num_routes, 1, in_channels]
 
         # Adjust shapes for matrix multiplication
@@ -122,6 +124,7 @@ class SecondaryCapsules(nn.Module):
         norm = torch.norm(x, dim=-1, keepdim=True)
         norm_squared = norm ** 2
         return (norm_squared / (1 + norm_squared)) * (x / norm)
+
 
 class CapsuleNetwork(nn.Module):
     def __init__(self, num_classes):
