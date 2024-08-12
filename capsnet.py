@@ -102,19 +102,28 @@ class SecondaryCapsules(nn.Module):
 
         # Adjust route_weights to match the number of routes
         adjusted_route_weights = self.route_weights[:num_routes, :, :, :]
+        
+        # Print shapes for debugging
+        print(f"x shape for matmul: {x.shape}")
+        print(f"adjusted_route_weights shape for matmul: {adjusted_route_weights.shape}")
 
         # Permute tensors for correct dimensions
         x = x.permute(0, 1, 3, 2)  # [num_routes, batch_size, in_channels, 1]
         adjusted_route_weights = adjusted_route_weights.permute(0, 1, 3, 2)  # [num_routes, num_capsules, in_channels, out_channels]
 
-        # Print shapes for debugging
-        print(f"x shape for matmul: {x.shape}")
-        print(f"adjusted_route_weights shape for matmul: {adjusted_route_weights.shape}")
+        # Print permuted shapes for debugging
+        print(f"x shape after permute: {x.shape}")
+        print(f"adjusted_route_weights shape after permute: {adjusted_route_weights.shape}")
 
-        # Perform batch matrix multiplication
-        u_hat = torch.matmul(x, adjusted_route_weights)  # Resulting in [num_routes, batch_size, num_capsules, out_channels]
+        try:
+            # Perform batch matrix multiplication
+            u_hat = torch.matmul(x, adjusted_route_weights)  # Resulting in [num_routes, batch_size, num_capsules, out_channels]
+            print(f"u_hat shape: {u_hat.shape}")
+        except RuntimeError as e:
+            print(f"Matrix multiplication error: {e}")
+            raise
+
         u_hat = u_hat.permute(1, 2, 0, 3)  # Switch back to [batch_size, num_capsules, num_routes, out_channels]
-        
         print(f"u_hat shape after permute: {u_hat.shape}")
 
         b_ij = torch.zeros(batch_size, self.num_capsules, num_routes, 1).to(x.device)
