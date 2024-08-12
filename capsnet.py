@@ -1,16 +1,28 @@
+import os
+import pandas as pd
+from PIL import Image
+from torch.utils.data import Dataset, DataLoader
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-from torch.utils.data import Dataset, DataLoader
-from torchvision import transforms
-from PIL import Image
-import pandas as pd
-import os
+import torch.optim as optim
+import torchvision.transforms as transforms
 
-# Define custom dataset class to load images and corresponding labels from Excel and folder structure
+# Define the categories (labels) in your dataset
+categories = [
+    '1-benign-melanocytic nevus', '2-benign-seborrheic keratosis', '3-benign-fibrous papule',
+    '4-benign-dermatofibroma', '5-benign-hemangioma', '6-benign-other', '7-malignant-bcc',
+    '8-malignant-scc', '9-malignant-sccis', '10-malignant-ak', '11-malignant-melanoma',
+    '12-malignant-other', '13-other-melanocytic lesion with possible re-excision',
+    '14-other-non-neoplastic/inflammatory/infectious'
+]
+
+# Dataset class for handling Excel data
 class ExcelImageDataset(Dataset):
     def __init__(self, excel_file, root_dirs, transform=None):
         self.data_frame = pd.read_excel(excel_file)
+        if 'Unnamed: 0' in self.data_frame.columns:
+            self.data_frame = self.data_frame.drop(columns=['Unnamed: 0'])
+
         self.data_frame.iloc[:, 0] = self.data_frame.iloc[:, 0].astype(str)
         self.root_dirs = root_dirs
         self.transform = transform
@@ -47,75 +59,66 @@ class ExcelImageDataset(Dataset):
         label = torch.tensor(self.label_map.get(label, -1), dtype=torch.long)
         return image, label
 
-
-
-# Define the Primary Capsule Layer
+# Capsule Network implementation
 class PrimaryCapsules(nn.Module):
-    def __init__(self, in_channels, out_channels, num_capsules, capsule_dim, kernel_size, stride):
+    def __init__(self, num_capsules, in_channels, out_channels, kernel_size, stride):
         super(PrimaryCapsules, self).__init__()
-        self.capsules = nn.ModuleList(
-            [nn.Conv2d(in_channels, out_channels, kernel_size=kernel_size, stride=stride) for _ in range(num_capsules)]
-        )
-        self.capsule_dim = capsule_dim
+        self.capsules = nn.Conv2d(in_channels, num_capsules * out_channels, kernel_size, stride)
+        self.num_capsules = num_capsules
+        self.out_channels = out_channels
 
     def forward(self, x):
-        u = [capsule(x) for capsule in self.capsules]
-        u = torch.cat(u, dim=1)
-        u = u.view(x.size(0), -1, self.capsule_dim)
-        return self.squash(u)
+        x = self.capsules(x)
+        x = x.view(x.size(0), self.num_capsules, -1)
+        x = self.squash(x)
+        return x
 
-    @staticmethod
-    def squash(s, dim=-1):
-        squared_norm = (s ** 2).sum(dim=dim, keepdim=True)
-        scale = squared_norm / (1 + squared_norm)
-        return scale * s / torch.sqrt(squared_norm + 1e-8)
+    def squash(self, x):
+        norm = torch.norm(x, dim=-1, keepdim=True)
+        norm_squared = norm ** 2
+        return (norm_squared / (1 + norm_squared)) * (x / norm)
 
-# Define the Secondary Capsule Layer
 class SecondaryCapsules(nn.Module):
-    def __init__(self, num_routes, num_capsules, in_channels, out_channels):
+    def __init__(self, num_capsules, num_routes, in_channels, out_channels):
         super(SecondaryCapsules, self).__init__()
         self.num_routes = num_routes
-        self.num_capsules = num_capsules
-        self.route_weights = nn.Parameter(torch.randn(num_routes, num_capsules, in_channels, out_channels))
+        self.route_weights = nn.Parameter(
+            torch.randn(1, num_routes, num_capsules, in_channels, out_channels)
+        )
 
     def forward(self, x):
         batch_size = x.size(0)
-        x = x.unsqueeze(2).unsqueeze(3)
-        u_hat = torch.matmul(x, self.route_weights)
-        u_hat = u_hat.view(batch_size, self.num_routes, self.num_capsules, -1)
-        u_hat = u_hat.permute(0, 2, 1, 3)
+        x = x.unsqueeze(2).expand(-1, -1, self.num_routes, -1).unsqueeze(4)
+        u_hat = torch.matmul(x, self.route_weights).squeeze(4)
 
-        b = torch.zeros(batch_size, self.num_capsules, self.num_routes, 1).to(x.device)
-        for i in range(3):  # Routing iterations
-            c = F.softmax(b, dim=2)
-            s = (c * u_hat).sum(dim=2)
-            v = self.squash(s)
-            b = b + (u_hat * v.unsqueeze(2)).sum(dim=-1, keepdim=True)
+        b_ij = torch.zeros(1, self.num_routes, self.num_capsules, 1).to(x.device)
+        for _ in range(3):
+            c_ij = torch.softmax(b_ij, dim=2)
+            s_j = (c_ij * u_hat).sum(dim=1, keepdim=True)
+            v_j = self.squash(s_j)
+            b_ij = b_ij + (u_hat * v_j).sum(dim=-1, keepdim=True)
 
-        return v
+        return v_j.squeeze(1)
 
-    @staticmethod
-    def squash(s, dim=-1):
-        squared_norm = (s ** 2).sum(dim=dim, keepdim=True)
-        scale = squared_norm / (1 + squared_norm)
-        return scale * s / torch.sqrt(squared_norm + 1e-8)
+    def squash(self, x):
+        norm = torch.norm(x, dim=-1, keepdim=True)
+        norm_squared = norm ** 2
+        return (norm_squared / (1 + norm_squared)) * (x / norm)
 
-# Define the Capsule Network
 class CapsuleNetwork(nn.Module):
-    def __init__(self, num_classes, in_channels=1):
+    def __init__(self, num_classes):
         super(CapsuleNetwork, self).__init__()
-        self.conv1 = nn.Conv2d(in_channels, 256, kernel_size=9, stride=1)
-        self.primary_capsules = PrimaryCapsules(256, 32 * 8, 32, 8, kernel_size=9, stride=2)
-        self.num_routes = 32 * 6 * 6
-        self.secondary_capsules = SecondaryCapsules(num_routes=self.num_routes, num_capsules=num_classes, in_channels=8, out_channels=16)
+        self.conv_layer = nn.Conv2d(in_channels=3, out_channels=256, kernel_size=9, stride=1)
+        self.primary_capsules = PrimaryCapsules(num_capsules=8, in_channels=256, out_channels=32, kernel_size=9, stride=2)
+        self.secondary_capsules = SecondaryCapsules(num_capsules=num_classes, num_routes=32 * 6 * 6, in_channels=8, out_channels=16)
 
     def forward(self, x):
-        x = F.relu(self.conv1(x))
+        x = torch.relu(self.conv_layer(x))
         x = self.primary_capsules(x)
         x = self.secondary_capsules(x)
         return x
 
-# Set up training
+# Training function
 def train_capsule_network():
     excel_file = '/root/stanfordData4321/stanfordData4321/dataRef/release_midas.xlsx'
     root_dirs = [
@@ -152,7 +155,6 @@ def train_capsule_network():
 
     torch.save(model.state_dict(), 'capsule_network.pth')
 
-    print("Training complete")
-
+# Run the training
 if __name__ == "__main__":
     train_capsule_network()
