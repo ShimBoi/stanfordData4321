@@ -1,194 +1,152 @@
-import os
-import pandas as pd
-from PIL import Image
-from torch.utils.data import Dataset, DataLoader
 import torch
 import torch.nn as nn
-import torch.optim as optim
-import torchvision.transforms as transforms
+import torch.nn.functional as F
+from torch.utils.data import Dataset, DataLoader
+import pandas as pd
+from PIL import Image
+import os
 
-# Define the categories (labels) in your dataset
-categories = [
-    '1-benign-melanocytic nevus', '2-benign-seborrheic keratosis', '3-benign-fibrous papule',
-    '4-benign-dermatofibroma', '5-benign-hemangioma', '6-benign-other', '7-malignant-bcc',
-    '8-malignant-scc', '9-malignant-sccis', '10-malignant-ak', '11-malignant-melanoma',
-    '12-malignant-other', '13-other-melanocytic lesion with possible re-excision',
-    '14-other-non-neoplastic/inflammatory/infectious'
-]
+class CapsuleLayer(nn.Module):
+    def __init__(self, in_channels, out_channels, num_routes, kernel_size, stride, padding):
+        super(CapsuleLayer, self).__init__()
+        self.conv = nn.Conv2d(in_channels, out_channels * num_routes, kernel_size, stride, padding)
+        self.num_routes = num_routes
+        self.out_channels = out_channels
+    
+    def squash(self, x):
+        norm = (x ** 2).sum(dim=-1, keepdim=True)
+        scale = norm / (1 + norm)
+        return scale * (x / torch.sqrt(norm + 1e-8))
+    
+    def forward(self, x):
+        x = self.conv(x)
+        batch_size, _, h, w = x.size()
+        x = x.view(batch_size, self.num_routes, self.out_channels, h, w)
+        x = x.permute(0, 1, 3, 4, 2)  # [batch_size, num_routes, h, w, out_channels]
+        x = x.contiguous().view(batch_size, self.num_routes, h * w, self.out_channels)
+        x = self.squash(x)
+        return x
 
-# Dataset class for handling Excel data
-class ExcelImageDataset(Dataset):
+class PrimaryCapsules(nn.Module):
+    def __init__(self):
+        super(PrimaryCapsules, self).__init__()
+        self.conv = nn.Conv2d(3, 256, kernel_size=9, stride=1)
+        self.primary_caps = CapsuleLayer(256, 8, 32, kernel_size=9, stride=2, padding=0)
+
+    def forward(self, x):
+        x = F.relu(self.conv(x))
+        x = self.primary_caps(x)
+        return x
+
+class DigitCapsules(nn.Module):
+    def __init__(self, num_classes):
+        super(DigitCapsules, self).__init__()
+        self.num_classes = num_classes
+        self.num_routes = 32  # Number of routes from primary capsules to digit capsules
+        self.num_capsules = num_classes
+        self.route_weights = nn.Parameter(torch.randn(self.num_routes, self.num_capsules, 8, 16))
+        self.num_routing = 3  # Number of routing iterations
+
+    def squash(self, x):
+        norm = (x ** 2).sum(dim=-1, keepdim=True)
+        scale = norm / (1 + norm)
+        return scale * (x / torch.sqrt(norm + 1e-8))
+
+    def forward(self, x):
+        batch_size, _, h, w = x.size()
+        x = x.view(batch_size, -1, h * w).permute(0, 2, 1)
+        x = x.unsqueeze(2).expand(-1, -1, self.num_capsules, -1)
+        u_hat = x.matmul(self.route_weights)
+        
+        b = torch.zeros_like(u_hat[:, :, :, 0])
+        for i in range(self.num_routing):
+            c = F.softmax(b, dim=2)
+            s = (c.unsqueeze(3) * u_hat).sum(dim=1)
+            v = self.squash(s)
+            if i < self.num_routing - 1:
+                b = b + (u_hat * v.unsqueeze(1)).sum(dim=-1)
+
+        return v
+
+class CapsuleNetwork(nn.Module):
+    def __init__(self, num_classes):
+        super(CapsuleNetwork, self).__init__()
+        self.primary_capsules = PrimaryCapsules()
+        self.digit_capsules = DigitCapsules(num_classes)
+
+    def forward(self, x):
+        x = self.primary_capsules(x)
+        x = self.digit_capsules(x)
+        return x
+
+class CustomDataset(Dataset):
     def __init__(self, excel_file, root_dirs, transform=None):
-        self.data_frame = pd.read_excel(excel_file)
-        if 'Unnamed: 0' in self.data_frame.columns:
-            self.data_frame = self.data_frame.drop(columns=['Unnamed: 0'])
-
-        self.data_frame.iloc[:, 0] = self.data_frame.iloc[:, 0].astype(str)
+        self.df = pd.read_excel(excel_file)
         self.root_dirs = root_dirs
         self.transform = transform
-        self.label_map = {label: idx for idx, label in enumerate(categories)}
-        self.image_paths = self._get_image_paths()
+        self.image_paths = []
+        self.labels = []
 
-    def _get_image_paths(self):
-        valid_paths = []
-        for idx, row in self.data_frame.iterrows():
-            img_found = False
-            for root_dir in self.root_dirs:
-                img_name = os.path.join(root_dir, row['midas_file_name'])
-                if os.path.isfile(img_name):
-                    label = row['clinical_impression_1']
-                    if label not in self.label_map:
-                        print(f"Warning: Label '{label}' not in label_map.")
-                        continue
-                    valid_paths.append((img_name, label))
-                    img_found = True
+        for index, row in self.df.iterrows():
+            image_name = row['midas_path']
+            label = row['clinical_impression_1']
+            found = False
+            for root_dir in root_dirs:
+                path = os.path.join(root_dir, image_name)
+                if os.path.isfile(path):
+                    self.image_paths.append(path)
+                    self.labels.append(label)
+                    found = True
                     break
-            if not img_found:
-                print(f"Warning: Image {row['midas_file_name']} not found in any root directory.")
-        print(f"Total valid paths found: {len(valid_paths)}")
-        return valid_paths
+            if not found:
+                print(f"Warning: Image {image_name} not found in any root directory.")
 
     def __len__(self):
         return len(self.image_paths)
 
     def __getitem__(self, idx):
-        img_name, label = self.image_paths[idx]
-        image = Image.open(img_name).convert("RGB")
+        img_path = self.image_paths[idx]
+        image = Image.open(img_path).convert('RGB')
+        label = self.labels[idx]
+
         if self.transform:
             image = self.transform(image)
-        label = torch.tensor(self.label_map.get(label, -1), dtype=torch.long)
-        return image, label
 
-# Capsule Network implementation
-class PrimaryCapsules(nn.Module):
-    def __init__(self, num_capsules, in_channels, out_channels, kernel_size, stride):
-        super(PrimaryCapsules, self).__init__()
-        self.capsules = nn.Conv2d(in_channels, num_capsules * out_channels, kernel_size, stride)
-        self.num_capsules = num_capsules
-        self.out_channels = out_channels
+        return image, torch.tensor(label, dtype=torch.long)
 
-    def forward(self, x):
-        x = self.capsules(x)
-        x = x.view(x.size(0), self.num_capsules, -1)
-        x = self.squash(x)
-        return x
-
-    def squash(self, x):
-        norm = torch.norm(x, dim=-1, keepdim=True)
-        norm_squared = norm ** 2
-        return (norm_squared / (1 + norm_squared)) * (x / norm)
-
-class SecondaryCapsules(nn.Module):
-    def __init__(self, num_capsules, num_routes, in_channels, out_channels):
-        super(SecondaryCapsules, self).__init__()
-        self.num_capsules = num_capsules
-        self.num_routes = num_routes
-        self.in_channels = in_channels
-        self.out_channels = out_channels
-
-        # Initialize route_weights with the correct shape
-        self.route_weights = nn.Parameter(
-            torch.randn(num_routes, num_capsules, in_channels, out_channels)
-        )
-
-    def forward(self, x):
-        batch_size = x.size(0)
-        num_routes = x.size(1)
-        num_capsules = x.size(2)
-
-        # Flatten capsule outputs
-        x = x.view(batch_size, num_routes, num_capsules, -1)  # Shape: [batch_size, num_routes, num_capsules, in_channels]
-
-        # Add new dimension for routing weights
-        x = x.unsqueeze(2)  # Shape: [batch_size, num_routes, 1, in_channels]
-
-        # Permute tensors for matrix multiplication
-        x = x.permute(0, 2, 1, 3)  # Adjust permutation according to actual tensor shape
-        adjusted_route_weights = self.route_weights  # Shape: [num_routes, num_capsules, in_channels, out_channels]
-
-        # Debugging shapes
-        print(f"x shape for matmul: {x.shape}")
-        print(f"adjusted_route_weights shape for matmul: {adjusted_route_weights.shape}")
-
-        try:
-            # Perform batch matrix multiplication
-            u_hat = torch.matmul(x, adjusted_route_weights)  # Shape: [batch_size, 1, num_capsules, out_channels]
-        except RuntimeError as e:
-            print(f"Matrix multiplication error: {e}")
-            raise
-
-        u_hat = u_hat.squeeze(2)  # Shape: [batch_size, num_routes, num_capsules, out_channels]
-
-        b_ij = torch.zeros(batch_size, self.num_capsules, self.num_routes, 1).to(x.device)
-        for _ in range(3):  # Number of routing iterations
-            c_ij = torch.softmax(b_ij, dim=2)
-            s_j = (c_ij * u_hat).sum(dim=2, keepdim=True)
-            v_j = self.squash(s_j)
-            b_ij = b_ij + (u_hat * v_j).sum(dim=-1, keepdim=True)
-
-        return v_j.squeeze(2)
-
-    def squash(self, x):
-        norm = torch.norm(x, dim=-1, keepdim=True)
-        norm_squared = norm ** 2
-        return (norm_squared / (1 + norm_squared)) * (x / norm)
-
-
-
-class CapsuleNetwork(nn.Module):
-    def __init__(self, num_classes):
-        super(CapsuleNetwork, self).__init__()
-        self.conv_layer = nn.Conv2d(in_channels=3, out_channels=256, kernel_size=9, stride=1)
-        self.primary_capsules = PrimaryCapsules(num_capsules=8, in_channels=256, out_channels=32, kernel_size=9, stride=2)
-        self.secondary_capsules = SecondaryCapsules(
-            num_capsules=num_classes, num_routes=32 * 6 * 6, in_channels=8, out_channels=16
-        )
-
-    def forward(self, x):
-        x = torch.relu(self.conv_layer(x))
-        x = self.primary_capsules(x)
-        x = self.secondary_capsules(x)
-        return x
-
-
-
-# Training function
 def train_capsule_network():
-    excel_file = '/root/stanfordData4321/stanfordData4321/dataRef/release_midas.xlsx'
-    root_dirs = [
+    num_classes = 15
+    model = CapsuleNetwork(num_classes)
+    criterion = nn.CrossEntropyLoss()
+    optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
+
+    from torchvision import transforms
+    transform = transforms.Compose([
+        transforms.Resize((224, 224)),
+        transforms.ToTensor(),
+    ])
+
+    dataset = CustomDataset(
+        excel_file='/root/stanfordData4321/stanfordData4321/dataRef/release_midas.xlsx',
+        rroot_dirs = [
     '/root/stanfordData4321/stanfordData4321/images2',
     '/root/stanfordData4321/stanfordData4321/images1',
     '/root/stanfordData4321/stanfordData4321/images3',
     '/root/stanfordData4321/stanfordData4321/images4'
-]  # Update this with actual root directories
-    transform = transforms.Compose([
-        transforms.Resize((128, 128)),
-        transforms.ToTensor()
-    ])
+],  # Replace with actual root directories
+        transform=transform
+    )
 
-    dataset = ExcelImageDataset(excel_file=excel_file, root_dirs=root_dirs, transform=transform)
-    dataloader = DataLoader(dataset, batch_size=32, shuffle=True, num_workers=4)
+    dataloader = DataLoader(dataset, batch_size=32, shuffle=True)
 
-    model = CapsuleNetwork(num_classes=len(categories))
-    criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.parameters(), lr=1e-3)
-
-    for epoch in range(5):  # Number of epochs
-        model.train()
-        running_loss = 0.0
+    for epoch in range(10):
         for images, labels in dataloader:
             optimizer.zero_grad()
             outputs = model(images)
             loss = criterion(outputs, labels)
             loss.backward()
             optimizer.step()
-            running_loss += loss.item() * images.size(0)
+            print(f"Epoch [{epoch+1}/10], Loss: {loss.item()}")
 
-        epoch_loss = running_loss / len(dataloader.dataset)
-        print(f'Epoch {epoch+1}/{10}, Loss: {epoch_loss:.4f}')
-
-    torch.save(model.state_dict(), 'capsule_network.pth')
-
-# Run the training
 if __name__ == "__main__":
     train_capsule_network()
