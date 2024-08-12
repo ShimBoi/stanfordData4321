@@ -103,7 +103,7 @@ class SecondaryCapsules(nn.Module):
         x = x.unsqueeze(2)  # Shape: [batch_size, num_routes, 1, in_channels]
 
         # Permute tensors for matrix multiplication
-        x = x.permute(0, 2, 1, 3)  # Shape: [batch_size, 1, num_routes, in_channels]
+        x = x.permute(0, 2, 1, 3)  # Adjust permutation according to actual tensor shape
         adjusted_route_weights = self.route_weights  # Shape: [num_routes, num_capsules, in_channels, out_channels]
 
         # Debugging shapes
