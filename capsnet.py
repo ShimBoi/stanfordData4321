@@ -85,24 +85,26 @@ class SecondaryCapsules(nn.Module):
         self.num_routes = num_routes
         self.in_channels = in_channels
         self.out_channels = out_channels
-        # Correct initialization of route_weights
+
+        # Initialize route_weights with the correct shape
         self.route_weights = nn.Parameter(
-            torch.randn(num_capsules, num_routes, in_channels, out_channels)
+            torch.randn(num_routes, num_capsules, in_channels, out_channels)
         )
 
     def forward(self, x):
         batch_size = x.size(0)
         num_routes = x.size(1)
+        num_capsules = x.size(2)
 
         # Flatten capsule outputs
-        x = x.view(batch_size, num_routes, -1)  # Shape: [batch_size, num_routes, in_channels]
+        x = x.view(batch_size, num_routes, num_capsules, -1)  # Shape: [batch_size, num_routes, num_capsules, in_channels]
 
         # Add new dimension for routing weights
         x = x.unsqueeze(2)  # Shape: [batch_size, num_routes, 1, in_channels]
 
         # Permute tensors for matrix multiplication
         x = x.permute(0, 2, 1, 3)  # Shape: [batch_size, 1, num_routes, in_channels]
-        adjusted_route_weights = self.route_weights.permute(1, 0, 2, 3)  # Shape: [num_routes, num_capsules, in_channels, out_channels]
+        adjusted_route_weights = self.route_weights  # Shape: [num_routes, num_capsules, in_channels, out_channels]
 
         # Debugging shapes
         print(f"x shape for matmul: {x.shape}")
@@ -110,14 +112,14 @@ class SecondaryCapsules(nn.Module):
 
         try:
             # Perform batch matrix multiplication
-            u_hat = torch.matmul(x, adjusted_route_weights)  # Shape: [batch_size, num_routes, num_capsules, out_channels]
+            u_hat = torch.matmul(x, adjusted_route_weights)  # Shape: [batch_size, 1, num_capsules, out_channels]
         except RuntimeError as e:
             print(f"Matrix multiplication error: {e}")
             raise
 
-        u_hat = u_hat.permute(0, 2, 1, 3)  # Shape: [batch_size, num_capsules, num_routes, out_channels]
+        u_hat = u_hat.squeeze(2)  # Shape: [batch_size, num_routes, num_capsules, out_channels]
 
-        b_ij = torch.zeros(batch_size, self.num_capsules, num_routes, 1).to(x.device)
+        b_ij = torch.zeros(batch_size, self.num_capsules, self.num_routes, 1).to(x.device)
         for _ in range(3):  # Number of routing iterations
             c_ij = torch.softmax(b_ij, dim=2)
             s_j = (c_ij * u_hat).sum(dim=2, keepdim=True)
@@ -130,6 +132,7 @@ class SecondaryCapsules(nn.Module):
         norm = torch.norm(x, dim=-1, keepdim=True)
         norm_squared = norm ** 2
         return (norm_squared / (1 + norm_squared)) * (x / norm)
+
 
 
 class CapsuleNetwork(nn.Module):
