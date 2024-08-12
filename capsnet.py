@@ -113,7 +113,7 @@ class SecondaryCapsules(nn.Module):
         print(f"u_hat shape after permute: {u_hat.shape}")
 
         b_ij = torch.zeros(batch_size, self.num_capsules, num_routes, 1).to(x.device)
-        for _ in range 3):
+        for _ in range(3):  # Corrected range syntax
             c_ij = torch.softmax(b_ij, dim=2)
             s_j = (c_ij * u_hat).sum(dim=2, keepdim=True)
             v_j = self.squash(s_j)
