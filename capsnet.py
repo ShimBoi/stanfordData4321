@@ -89,10 +89,19 @@ class SecondaryCapsules(nn.Module):
 
     def forward(self, x):
         batch_size = x.size(0)
-        x = x.view(batch_size, self.num_routes, -1)  # Adjusting the view to match tensor size
+        print(f"Input tensor shape before view: {x.shape}")
+        
+        # Calculate the correct shape dimensions for view
+        x = x.view(batch_size, self.num_routes, -1)  # Adjust the view to match tensor size
+        
+        print(f"Tensor shape after view: {x.shape}")
+        
         x = x.unsqueeze(2)  # Adding a new dimension
+        print(f"Tensor shape after unsqueeze: {x.shape}")
+        
         u_hat = torch.matmul(x, self.route_weights)
         u_hat = u_hat.permute(0, 2, 1, 3)  # [batch_size, num_capsules, num_routes, out_channels]
+        print(f"u_hat shape after permute: {u_hat.shape}")
 
         b_ij = torch.zeros(batch_size, self.num_capsules, self.num_routes, 1).to(x.device)
         for _ in range(3):
@@ -107,6 +116,7 @@ class SecondaryCapsules(nn.Module):
         norm = torch.norm(x, dim=-1, keepdim=True)
         norm_squared = norm ** 2
         return (norm_squared / (1 + norm_squared)) * (x / norm)
+
 
 
 
