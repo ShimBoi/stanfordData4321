@@ -129,6 +129,7 @@ class SecondaryCapsules(nn.Module):
         norm_squared = norm ** 2
         return (norm_squared / (1 + norm_squared)) * (x / norm)
 
+
 class CapsuleNetwork(nn.Module):
     def __init__(self, num_classes):
         super(CapsuleNetwork, self).__init__()
