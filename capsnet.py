@@ -90,11 +90,11 @@ class SecondaryCapsules(nn.Module):
         )
 
     def forward(self, x):
-        batch_size = x.size(0)
-        num_routes = x.size(1)
+        batch_size = x.size(1)  # Assuming x has shape [num_routes, batch_size, 1, in_channels]
+        num_routes = x.size(0)
 
         print(f"Input tensor shape before view: {x.shape}")
-        x = x.view(batch_size, num_routes, -1)  # Flatten the capsule outputs
+        x = x.view(num_routes, batch_size, -1)  # Flatten the capsule outputs
         print(f"Tensor shape after view: {x.shape}")
 
         x = x.unsqueeze(2)  # Add new dimension for compatibility
@@ -104,7 +104,7 @@ class SecondaryCapsules(nn.Module):
         adjusted_route_weights = self.route_weights[:num_routes, :, :, :]
 
         # Permute tensors for correct dimensions
-        x = x.permute(1, 0, 2, 3)  # [num_routes, batch_size, 1, in_channels]
+        x = x.permute(0, 1, 3, 2)  # [num_routes, batch_size, in_channels, 1]
         adjusted_route_weights = adjusted_route_weights.permute(0, 1, 3, 2)  # [num_routes, num_capsules, in_channels, out_channels]
 
         # Print shapes for debugging
