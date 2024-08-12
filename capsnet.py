@@ -117,45 +117,35 @@ class CapsuleNetwork(nn.Module):
 
 # Set up training
 def train_capsule_network():
-    excel_file = '/root/stanfordData4321/stanfordData4321/dataRef/release_midas.xlsx'
-    root_dir = '/path/to/images'  # Update this path to where your images are stored
-
-    # Define your transformations
+    excel_file = '/content/drive/MyDrive/midasmultimodalimagedatasetforaibasedskincancer/release_midas.xlsx'
+    root_dirs = ['/path/to/root/dir1', '/path/to/root/dir2']  # Update this with actual root directories
     transform = transforms.Compose([
-        transforms.Resize((128, 128)),  # Resizing to match input size
-        transforms.ToTensor(),
+        transforms.Resize((128, 128)),
+        transforms.ToTensor()
     ])
 
-    # Create the dataset and dataloader
-    dataset = ExcelImageDataset(excel_file=excel_file, root_dir=root_dir, transform=transform)
+    dataset = ExcelImageDataset(excel_file=excel_file, root_dirs=root_dirs, transform=transform)
     dataloader = DataLoader(dataset, batch_size=32, shuffle=True, num_workers=4)
 
-    num_classes = len(dataset.categories)
-    model = CapsuleNetwork(num_classes=num_classes, in_channels=3).to('cuda')  # Assuming RGB images
-
-    # Define loss and optimizer
+    model = CapsuleNetwork(num_classes=len(categories))
     criterion = nn.CrossEntropyLoss()
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+    optimizer = optim.Adam(model.parameters(), lr=1e-3)
 
-    # Training loop
-    num_epochs = 10
-    for epoch in range(num_epochs):
+    for epoch in range(10):  # Number of epochs
         model.train()
         running_loss = 0.0
-        for i, (inputs, labels) in enumerate(dataloader):
-            inputs, labels = inputs.to('cuda'), labels.to('cuda')
-
+        for images, labels in dataloader:
             optimizer.zero_grad()
-
-            outputs = model(inputs)
+            outputs = model(images)
             loss = criterion(outputs, labels)
             loss.backward()
             optimizer.step()
+            running_loss += loss.item() * images.size(0)
 
-            running_loss += loss.item()
-            if i % 10 == 9:  # Print every 10 batches
-                print(f"[Epoch {epoch+1}, Batch {i+1}] loss: {running_loss / 10:.3f}")
-                running_loss = 0.0
+        epoch_loss = running_loss / len(dataloader.dataset)
+        print(f'Epoch {epoch+1}/{10}, Loss: {epoch_loss:.4f}')
+
+    torch.save(model.state_dict(), 'capsule_network.pth')
 
     print("Training complete")
 
