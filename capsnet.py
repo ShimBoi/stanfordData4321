@@ -92,7 +92,7 @@ class SecondaryCapsules(nn.Module):
     def forward(self, x):
         batch_size = x.size(1)  # Assuming x has shape [num_routes, batch_size, 1, in_channels]
         num_routes = x.size(0)
-
+        
         print(f"Input tensor shape before view: {x.shape}")
         x = x.view(num_routes, batch_size, -1)  # Flatten the capsule outputs
         print(f"Tensor shape after view: {x.shape}")
@@ -108,8 +108,8 @@ class SecondaryCapsules(nn.Module):
         print(f"adjusted_route_weights shape for matmul: {adjusted_route_weights.shape}")
 
         # Permute tensors for correct dimensions
-        x = x.permute(0, 1, 3, 2)  # [num_routes, batch_size, in_channels, 1]
-        adjusted_route_weights = adjusted_route_weights.permute(0, 1, 3, 2)  # [num_routes, num_capsules, out_channels, in_channels]
+        x = x.permute(1, 0, 3, 2)  # [batch_size, num_routes, in_channels, 1]
+        adjusted_route_weights = adjusted_route_weights.permute(1, 0, 3, 2)  # [num_capsules, num_routes, out_channels, in_channels]
 
         # Print permuted shapes for debugging
         print(f"x shape after permute: {x.shape}")
@@ -117,13 +117,13 @@ class SecondaryCapsules(nn.Module):
 
         try:
             # Perform batch matrix multiplication
-            u_hat = torch.matmul(x, adjusted_route_weights)  # Resulting in [num_routes, batch_size, num_capsules, out_channels]
+            u_hat = torch.matmul(x, adjusted_route_weights)  # Resulting in [batch_size, num_capsules, num_routes, out_channels]
             print(f"u_hat shape: {u_hat.shape}")
         except RuntimeError as e:
             print(f"Matrix multiplication error: {e}")
             raise
 
-        u_hat = u_hat.permute(1, 2, 0, 3)  # Switch back to [batch_size, num_capsules, num_routes, out_channels]
+        u_hat = u_hat.permute(0, 2, 1, 3)  # Switch back to [batch_size, num_routes, num_capsules, out_channels]
         print(f"u_hat shape after permute: {u_hat.shape}")
 
         b_ij = torch.zeros(batch_size, self.num_capsules, num_routes, 1).to(x.device)
@@ -139,7 +139,6 @@ class SecondaryCapsules(nn.Module):
         norm = torch.norm(x, dim=-1, keepdim=True)
         norm_squared = norm ** 2
         return (norm_squared / (1 + norm_squared)) * (x / norm)
-
 
 
 class CapsuleNetwork(nn.Module):
