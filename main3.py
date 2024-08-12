@@ -160,7 +160,7 @@ def objective(trial):
     optimizer = optim.SGD(net.parameters(), lr=lr, momentum=momentum)
     criterion = nn.CrossEntropyLoss()
 
-    for epoch in range(3):  # Fewer epochs for faster optimization
+    for epoch in range(1):  # Fewer epochs for faster optimization
         net.train()
         running_loss = 0.0
         for inputs, labels in train_loader:
@@ -188,7 +188,7 @@ def objective(trial):
     return accuracy
 
 study = optuna.create_study(direction='maximize')
-study.optimize(objective, n_trials= 10)
+study.optimize(objective, n_trials=  )
 
 best_params = study.best_params
 print("Best parameters found by Optuna:", best_params)
@@ -201,7 +201,7 @@ optimizer = optim.SGD(net.parameters(), lr=best_lr, momentum=best_momentum)
 # Define loss function and optimizer
 criterion = nn.CrossEntropyLoss()
 
-for epoch in range(15):  # Adjust epoch count as needed
+for epoch in range(1):  # Adjust epoch count as needed
     net.train()
     running_loss = 0.0
     for i, data in enumerate(train_loader, 0):
@@ -243,29 +243,33 @@ def apply_grad_cam(img_path, model, transform, target_layer):
 
     with torch.no_grad():
         output = model(input_tensor)
-        pred = output.argmax(dim=1)
+        pred = output.argmax(dim=1).item()  # Convert tensor to scalar for target_category
 
-    grad_cam = GradCAM(model=model, target_layers=[target_layer], use_cuda=True)
-    grayscale_cam = grad_cam(input_tensor=input_tensor, target_category=pred.item())[0, :]
-    
-    # Convert to numpy array and normalize
+    grad_cam = GradCAM(model=model, target_layers=[target_layer])
+    grayscale_cam = grad_cam(input_tensor=input_tensor, target_category=pred)[0, :]
+
+    # Resize and normalize the Grad-CAM output
     grayscale_cam = cv2.resize(grayscale_cam, (image.size[0], image.size[1]))
-    cam_image = show_cam_on_image(np.array(image), grayscale_cam, use_rgb=True)
+    cam_image = show_cam_on_image(np.array(image) / 255.0, grayscale_cam, use_rgb=True)
 
     # Improve visualization
     plt.figure(figsize=(12, 6))
     plt.subplot(1, 2, 1)
     plt.imshow(image)
-    plt.title(f"Original Image - Label: {categories[pred.item()]}")
-    
+    plt.title(f"Original Image - Label: {categories[pred]}")
+
     plt.subplot(1, 2, 2)
     plt.imshow(cam_image)
-    plt.title(f"Grad-CAM - Predicted: {categories[pred.item()]}")
-    
+    plt.title(f"Grad-CAM - Predicted: {categories[pred]}")
+
     plt.show()
+
+    # Explicitly delete Grad-CAM to free resources
+    del grad_cam
 
 # Example usage of Grad-CAM
 apply_grad_cam('/root/stanfordData4321/stanfordData4321-1/images4/s-prd-618992882.jpg', net, transform, net.layer4[1].conv2)
+
 
 # Save model checkpoint
 checkpoint_path = './model_checkpoint.pth'
