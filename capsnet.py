@@ -92,19 +92,22 @@ class SecondaryCapsules(nn.Module):
         num_routes = x.size(1)  # Dynamically use the number of routes from input tensor
         print(f"Input tensor shape before view: {x.shape}")
         
-        # Adjusting the view operation to match tensor size
         x = x.view(batch_size, num_routes, -1)
         print(f"Tensor shape after view: {x.shape}")
         
         x = x.unsqueeze(2)  # Adding a new dimension
         print(f"Tensor shape after unsqueeze: {x.shape}")
 
-        # Adjusting route_weights to match the number of routes from the input tensor
-        adjusted_route_weights = self.route_weights[:, :num_routes, :, :]  # Adjust route weights to match input tensor
+        # Adjust route_weights to match the number of routes from the input tensor
+        adjusted_route_weights = self.route_weights[:self.num_capsules, :num_routes, :, :]  # Adjust route weights to match input tensor
         
         # Reshape x and adjusted_route_weights for batch matrix multiplication
         x = x.permute(1, 0, 2, 3)  # Switch to [num_routes, batch_size, 1, in_channels]
         adjusted_route_weights = adjusted_route_weights.permute(1, 0, 2, 3)  # Switch to [num_routes, num_capsules, in_channels, out_channels]
+        
+        # Print shapes for debugging
+        print(f"x shape for matmul: {x.shape}")
+        print(f"adjusted_route_weights shape for matmul: {adjusted_route_weights.shape}")
         
         # Perform batch matrix multiplication
         u_hat = torch.matmul(x, adjusted_route_weights)  # Resulting in [num_routes, batch_size, num_capsules, out_channels]
@@ -125,6 +128,7 @@ class SecondaryCapsules(nn.Module):
         norm = torch.norm(x, dim=-1, keepdim=True)
         norm_squared = norm ** 2
         return (norm_squared / (1 + norm_squared)) * (x / norm)
+
 
 
 
