@@ -102,12 +102,18 @@ class SecondaryCapsules(nn.Module):
         # Adjusting route_weights to match the number of routes from the input tensor
         adjusted_route_weights = self.route_weights[:, :num_routes, :, :]  # Adjust route weights to match input tensor
         
-        u_hat = torch.matmul(x, adjusted_route_weights)
-        u_hat = u_hat.permute(0, 2, 1, 3)  # [batch_size, num_capsules, num_routes, out_channels]
+        # Reshape x and adjusted_route_weights for batch matrix multiplication
+        x = x.permute(1, 0, 2, 3)  # Switch to [num_routes, batch_size, 1, in_channels]
+        adjusted_route_weights = adjusted_route_weights.permute(1, 0, 2, 3)  # Switch to [num_routes, num_capsules, in_channels, out_channels]
+        
+        # Perform batch matrix multiplication
+        u_hat = torch.matmul(x, adjusted_route_weights)  # Resulting in [num_routes, batch_size, num_capsules, out_channels]
+        u_hat = u_hat.permute(1, 2, 0, 3)  # Switch back to [batch_size, num_capsules, num_routes, out_channels]
+        
         print(f"u_hat shape after permute: {u_hat.shape}")
 
         b_ij = torch.zeros(batch_size, self.num_capsules, num_routes, 1).to(x.device)
-        for _ in range(3):
+        for _ in range 3):
             c_ij = torch.softmax(b_ij, dim=2)
             s_j = (c_ij * u_hat).sum(dim=2, keepdim=True)
             v_j = self.squash(s_j)
@@ -119,7 +125,6 @@ class SecondaryCapsules(nn.Module):
         norm = torch.norm(x, dim=-1, keepdim=True)
         norm_squared = norm ** 2
         return (norm_squared / (1 + norm_squared)) * (x / norm)
-
 
 
 
