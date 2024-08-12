@@ -139,9 +139,17 @@ class CapsNet(nn.Module):
         super(CapsNet, self).__init__()
         self.primary_capsules = PrimaryCapsuleLayer(num_capsules=8, in_channels=3, out_channels=32, kernel_size=9)
         # Calculate the correct number of routes here based on your input image size and the PrimaryCapsuleLayer output.
-        num_routes = 8 * 8 * 32  # This needs to match the flattened output of the primary capsule layer
+        num_routes = self._calculate_num_routes()  # Update to calculate the correct num_routes
         self.secondary_capsules = CapsuleLayer(num_capsules=num_classes, in_channels=32, out_channels=16, num_routes=num_routes)
         self.fc = nn.Linear(16 * num_classes, num_classes)
+
+    def _calculate_num_routes(self):
+        # Assuming input size is (3, 224, 224)
+        with torch.no_grad():
+            x = torch.zeros(1, 3, 224, 224)  # Adjust size based on your input
+            x = self.primary_capsules.capsules(x)
+            num_routes = x.size(2) * x.size(3)
+        return num_routes
 
     def forward(self, x):
         x = self.primary_capsules(x)
@@ -149,7 +157,6 @@ class CapsNet(nn.Module):
         x = x.view(x.size(0), -1)
         x = self.fc(x)
         return x
-
 
 
 # Initialize dataset and model
