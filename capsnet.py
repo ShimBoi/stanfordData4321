@@ -15,7 +15,7 @@ class CapsuleLayer(nn.Module):
 
     def forward(self, x):
         batch_size = x.size(0)
-        x = x.unsqueeze(1)  # Add route dimension
+        x = x.unsqueeze(2)  # Add route dimension
         u_hat = torch.matmul(x, self.route_weights)  # Matrix multiplication
         
         # Dynamic routing logic
@@ -46,9 +46,9 @@ class CapsNet(nn.Module):
         self.pool2 = nn.MaxPool2d(2, 2)
         
         # Primary capsules layer
-        self.primary_capsules = CapsuleLayer(num_capsules=32, in_channels=16, out_channels=8, num_routes=1152)
+        self.primary_capsules = CapsuleLayer(num_capsules=32, in_channels=16, out_channels=8, num_routes=3136)
         
-        # Adjust based on the size after primary capsule layer
+        # Secondary capsules layer
         self.secondary_capsules = CapsuleLayer(num_capsules=num_classes, in_channels=8, out_channels=16, num_routes=32)
         
         # Final layer
