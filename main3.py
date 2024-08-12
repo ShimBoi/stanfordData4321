@@ -236,43 +236,43 @@ with torch.no_grad():
 
 print(f'Accuracy on the test dataset: {100 * correct / total:.2f}%')
 
-def apply_grad_cam(img_path, model, transform, target_layer):
+def apply_grad_cam(img_path, model, transform, target_layer, output_path=None):
     model.eval()
     image = Image.open(img_path).convert("RGB")
     input_tensor = transform(image).unsqueeze(0).to(device)
 
-    # Forward pass to get predictions
     with torch.no_grad():
         output = model(input_tensor)
-        pred = output.argmax(dim=1).item()  # Convert tensor to scalar for target_category
+        pred = output.argmax(dim=1).item()
 
-    # GradCAM doesn't require the target_category to be passed in this way anymore
     grad_cam = GradCAM(model=model, target_layers=[target_layer])
 
-    # Generate the CAM
-    grayscale_cam = grad_cam(input_tensor=input_tensor)[0]  # No target_category argument
-
-    # Resize and normalize the Grad-CAM output
+    grayscale_cam = grad_cam(input_tensor=input_tensor)[0]
     grayscale_cam = cv2.resize(grayscale_cam, (image.size[0], image.size[1]))
     cam_image = show_cam_on_image(np.array(image) / 255.0, grayscale_cam, use_rgb=True)
 
-    # Improve visualization
-    plt.figure(figsize=(12, 6))
-    plt.subplot(1, 2, 1)
-    plt.imshow(image)
-    plt.title(f"Original Image - Label: {categories[pred]}")
-
-    plt.subplot(1, 2, 2)
+    # Display the image
+    plt.figure(figsize=(8, 8))
     plt.imshow(cam_image)
     plt.title(f"Grad-CAM - Predicted: {categories[pred]}")
-
+    plt.axis('off')  # Hide axis for better visualization
     plt.show()
 
-    # Explicitly delete Grad-CAM to free resources
-    del grad_cam
+    # Save the image if output_path is provided
+    if output_path:
+        cam_image_bgr = cv2.cvtColor(cam_image, cv2.COLOR_RGB2BGR)  # Convert RGB to BGR for saving
+        cv2.imwrite(output_path, cam_image_bgr)
+        print(f"Grad-CAM image saved to {output_path}")
 
 # Example usage of Grad-CAM
-apply_grad_cam('/root/stanfordData4321/stanfordData4321-1/images4/s-prd-618992882.jpg', net, transform, net.layer4[1].conv2)
+apply_grad_cam(
+    '/root/stanfordData4321/stanfordData4321-1/images4/s-prd-618992882.jpg',
+    net,
+    transform,
+    net.layer4[1].conv2,
+    output_path='./grad_cam_image.png'  # Save image to a file
+)
+
 
 
 
