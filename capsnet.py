@@ -83,14 +83,16 @@ class SecondaryCapsules(nn.Module):
         super(SecondaryCapsules, self).__init__()
         self.num_capsules = num_capsules
         self.num_routes = num_routes
+        self.in_channels = in_channels
+        self.out_channels = out_channels
         self.route_weights = nn.Parameter(
-            torch.randn(num_routes, num_capsules, in_channels, out_channels)
+            torch.randn(num_routes, num_capsules, out_channels, in_channels)  # Corrected dimensions
         )
 
     def forward(self, x):
         batch_size = x.size(0)
-        num_routes = x.size(1)  # Ensure this is consistent with input tensor
-        
+        num_routes = x.size(1)
+
         print(f"Input tensor shape before view: {x.shape}")
         x = x.view(batch_size, num_routes, -1)  # Flatten the capsule outputs
         print(f"Tensor shape after view: {x.shape}")
@@ -128,6 +130,7 @@ class SecondaryCapsules(nn.Module):
         norm = torch.norm(x, dim=-1, keepdim=True)
         norm_squared = norm ** 2
         return (norm_squared / (1 + norm_squared)) * (x / norm)
+
 
 
 class CapsuleNetwork(nn.Module):
