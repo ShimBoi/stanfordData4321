@@ -13,6 +13,7 @@ from pytorch_grad_cam import GradCAM
 from pytorch_grad_cam.utils.image import show_cam_on_image
 import optuna
 from collections import Counter
+import cv2
 
 # Define categories and image size
 categories = ['7-malignant-bcc', '1-benign-melanocytic nevus', '6-benign-other',
@@ -235,32 +236,38 @@ with torch.no_grad():
 
 print(f'Accuracy on the test dataset: {100 * correct / total:.2f}%')
 
-# Grad-CAM visualization
-target_layers = [net.layer4[-1]]  # Last layer of the network
+def apply_grad_cam(img_path, model, transform, target_layer):
+    model.eval()
+    image = Image.open(img_path).convert("RGB")
+    input_tensor = transform(image).unsqueeze(0).to(device)
 
-# Use context manager to ensure proper cleanup
-with GradCAM(model=net, target_layers=target_layers) as cam:
+    with torch.no_grad():
+        output = model(input_tensor)
+        pred = output.argmax(dim=1)
 
-    # Display Grad-CAM for a few test images
-    def visualize_gradcam(inputs, labels, predicted_labels):
-        for i in range(len(inputs)):
-            input_image = inputs[i].cpu().numpy().transpose(1, 2, 0)
-            input_image = (input_image - input_image.min()) / (input_image.max() - input_image.min())  # Normalize
-            grayscale_cam = cam(input_tensor=inputs[i:i+1], target_category=predicted_labels[i].item())
-            visualization = show_cam_on_image(input_image, grayscale_cam[0], use_rgb=True)
+    grad_cam = GradCAM(model=model, target_layers=[target_layer], use_cuda=True)
+    grayscale_cam = grad_cam(input_tensor=input_tensor, target_category=pred.item())[0, :]
+    
+    # Convert to numpy array and normalize
+    grayscale_cam = cv2.resize(grayscale_cam, (image.size[0], image.size[1]))
+    cam_image = show_cam_on_image(np.array(image), grayscale_cam, use_rgb=True)
 
-            plt.figure(figsize=(10, 5))
-            plt.subplot(1, 2, 1)
-            plt.imshow(input_image)
-            plt.title(f"Original - Label: {categories[labels[i].item()]}")
-            plt.subplot(1, 2, 2)
-            plt.imshow(visualization)
-            plt.title(f"Grad-CAM - Predicted: {categories[predicted_labels[i].item()]}")
-            plt.show()
+    # Improve visualization
+    plt.figure(figsize=(12, 6))
+    plt.subplot(1, 2, 1)
+    plt.imshow(image)
+    plt.title(f"Original Image - Label: {categories[pred.item()]}")
+    
+    plt.subplot(1, 2, 2)
+    plt.imshow(cam_image)
+    plt.title(f"Grad-CAM - Predicted: {categories[pred.item()]}")
+    
+    plt.show()
 
-    # Test the Grad-CAM visualization with a few images
-    inputs, labels = next(iter(test_loader))
-    inputs, labels = inputs.to(device), labels.to(device)
-    outputs = net(inputs)
-    _, predicted = torch.max(outputs, 1)
-    visualize_gradcam(inputs, labels, predicted)
+# Example usage of Grad-CAM
+apply_grad_cam('./augmented_images/7-malignant-bcc/0_original.png', net, transform, net.layer4[1].conv2)
+
+# Save model checkpoint
+checkpoint_path = './model_checkpoint.pth'
+torch.save(net.state_dict(), checkpoint_path)
+print(f"Model checkpoint saved to {checkpoint_path}")
