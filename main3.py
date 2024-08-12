@@ -266,7 +266,7 @@ def apply_grad_cam(img_path, model, transform, target_layer, output_path=None):
 
 # Example usage of Grad-CAM
 apply_grad_cam(
-    '/root/stanfordData4321/stanfordData4321-1/images4/s-prd-618992882.jpg',
+    '/root/stanfordData4321/stanfordData4321-1/images4/s-prd-784541963.jpg',
     net,
     transform,
     net.layer4[1].conv2,
