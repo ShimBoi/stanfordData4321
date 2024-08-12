@@ -98,8 +98,11 @@ class SecondaryCapsules(nn.Module):
         
         x = x.unsqueeze(2)  # Adding a new dimension
         print(f"Tensor shape after unsqueeze: {x.shape}")
+
+        # Adjusting route_weights to match the number of routes from the input tensor
+        adjusted_route_weights = self.route_weights[:, :num_routes, :, :]  # Adjust route weights to match input tensor
         
-        u_hat = torch.matmul(x, self.route_weights)
+        u_hat = torch.matmul(x, adjusted_route_weights)
         u_hat = u_hat.permute(0, 2, 1, 3)  # [batch_size, num_capsules, num_routes, out_channels]
         print(f"u_hat shape after permute: {u_hat.shape}")
 
@@ -116,6 +119,7 @@ class SecondaryCapsules(nn.Module):
         norm = torch.norm(x, dim=-1, keepdim=True)
         norm_squared = norm ** 2
         return (norm_squared / (1 + norm_squared)) * (x / norm)
+
 
 
 
