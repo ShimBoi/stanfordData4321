@@ -68,7 +68,7 @@ class CapsNet(nn.Module):
         print(f"Shape after reshaping: {x.shape}")
 
         # Reshape based on the number of primary capsules
-        x = x.view(x.size(0), 32, 8, -1)  # [batch_size, num_capsules, in_channels, height*width]
+        x = x.view(x.size(0), 32, 16, -1)  # [batch_size, num_capsules, in_channels, height*width]
         
         x = self.primary_capsules(x)
         x = self.secondary_capsules(x)
