@@ -92,48 +92,51 @@ class AugmentedImageDataset(Dataset):  # Using the Dataset class
         return image, torch.tensor(label, dtype=torch.long)
 
 # Define your CapsNet model
+class PrimaryCapsuleLayer(nn.Module):
+    def __init__(self, num_capsules, in_channels, out_channels, kernel_size, stride=1):
+        super(PrimaryCapsuleLayer, self).__init__()
+        self.num_capsules = num_capsules
+        self.out_channels = out_channels
+        self.capsules = nn.Conv2d(in_channels, num_capsules * out_channels, kernel_size=kernel_size, stride=stride)
+
+    def forward(self, x):
+        x = self.capsules(x)
+        x = x.view(x.size(0), self.num_capsules, self.out_channels, -1)
+        norms = torch.norm(x, dim=-1, keepdim=True)
+        squash = (norms**2 / (1 + norms**2)) / (1 + norms**2)
+        return squash * x / norms
+
 class CapsuleLayer(nn.Module):
-    def __init__(self, num_capsules, in_channels, out_channels, kernel_size, stride=1, routing_iterations=3):
+    def __init__(self, num_capsules, in_channels, out_channels, num_routes, routing_iterations=3):
         super(CapsuleLayer, self).__init__()
         self.num_capsules = num_capsules
         self.routing_iterations = routing_iterations
         self.in_channels = in_channels
         self.out_channels = out_channels
         
-        self.capsules = nn.ModuleList([
-            nn.Conv2d(in_channels, out_channels, kernel_size=kernel_size, stride=stride)
-            for _ in range(num_capsules)
-        ])
-    
-    def forward(self, x):
-        u = [capsule(x) for capsule in self.capsules]
-        u = torch.stack(u, dim=1)
-        u = u.view(u.size(0), self.num_capsules, self.out_channels, -1)
-        
-        norms = torch.norm(u, dim=-1, keepdim=True)
-        squash = (norms**2 / (1 + norms**2)) / (1 + norms**2)
-        return squash * u / norms
+        self.route_weights = nn.Parameter(torch.randn(num_capsules, num_routes, in_channels, out_channels))
 
-class PrimaryCapsuleLayer(nn.Module):
-    def __init__(self, num_capsules, in_channels, out_channels, kernel_size, stride=1):
-        super(PrimaryCapsuleLayer, self).__init__()
-        self.conv = nn.Conv2d(in_channels, out_channels, kernel_size=kernel_size, stride=stride)
-        self.num_capsules = num_capsules
-        self.out_channels = out_channels
-    
     def forward(self, x):
-        x = self.conv(x)
-        x = F.relu(x)
-        x = x.view(x.size(0), self.num_capsules, self.out_channels, -1)
-        norms = torch.norm(x, dim=-1, keepdim=True)
-        squash = (norms**2 / (1 + norms**2)) / (1 + norms**2)
-        return squash * x / norms
+        u_hat = torch.matmul(x.unsqueeze(1), self.route_weights)
+        u_hat = u_hat.squeeze(-2)
+        
+        b_ij = torch.zeros_like(u_hat[:, :, :, 0], device=x.device)
+        
+        for iteration in range(self.routing_iterations):
+            c_ij = F.softmax(b_ij, dim=1)
+            s_j = (c_ij.unsqueeze(-1) * u_hat).sum(dim=1)
+            norms = torch.norm(s_j, dim=-1, keepdim=True)
+            v_j = (norms**2 / (1 + norms**2)) * (s_j / norms)
+            if iteration < self.routing_iterations - 1:
+                b_ij = b_ij + (u_hat * v_j.unsqueeze(1)).sum(dim=-1)
+        
+        return v_j
 
 class CapsNet(nn.Module):
     def __init__(self, num_classes):
         super(CapsNet, self).__init__()
-        self.primary_capsules = PrimaryCapsuleLayer(num_capsules=8, in_channels=3, out_channels=16, kernel_size=9, stride=2)
-        self.secondary_capsules = CapsuleLayer(num_capsules=num_classes, in_channels=16, out_channels=16, kernel_size=9, stride=2)
+        self.primary_capsules = PrimaryCapsuleLayer(num_capsules=8, in_channels=3, out_channels=32, kernel_size=9, stride=2)
+        self.secondary_capsules = CapsuleLayer(num_capsules=num_classes, in_channels=32, out_channels=16, num_routes=8 * 8)
         self.fc = nn.Linear(16 * num_classes, num_classes)
     
     def forward(self, x):
@@ -142,6 +145,7 @@ class CapsNet(nn.Module):
         x = x.view(x.size(0), -1)
         x = self.fc(x)
         return x
+
 
 # Initialize dataset and model
 root_dirs = [
