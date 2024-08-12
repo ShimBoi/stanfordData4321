@@ -102,7 +102,7 @@ class SecondaryCapsules(nn.Module):
 
         # Adjust route_weights to match the number of routes
         adjusted_route_weights = self.route_weights[:num_routes, :, :, :]
-        
+
         # Print shapes for debugging
         print(f"x shape for matmul: {x.shape}")
         print(f"adjusted_route_weights shape for matmul: {adjusted_route_weights.shape}")
@@ -139,6 +139,7 @@ class SecondaryCapsules(nn.Module):
         norm = torch.norm(x, dim=-1, keepdim=True)
         norm_squared = norm ** 2
         return (norm_squared / (1 + norm_squared)) * (x / norm)
+
 
 
 class CapsuleNetwork(nn.Module):
