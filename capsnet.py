@@ -10,7 +10,6 @@ class CapsuleLayer(nn.Module):
         self.out_channels = out_channels
         self.num_routes = num_routes
         
-        # Initialize route weights
         self.route_weights = nn.Parameter(torch.randn(num_capsules, num_routes, in_channels, out_channels))
 
     def forward(self, x):
@@ -40,35 +39,36 @@ class CapsNet(nn.Module):
         super(CapsNet, self).__init__()
         
         # Convolutional layers for feature extraction
-        self.conv1 = nn.Conv2d(3, 8, 3, padding=1)
-        self.pool1 = nn.MaxPool2d(2, 2)
-        self.conv2 = nn.Conv2d(8, 16, 3, padding=1)
-        self.pool2 = nn.MaxPool2d(2, 2)
-        
+        self.conv1 = nn.Conv2d(3, 8, 3, padding=1)  # 64x64x3 -> 64x64x8
+        self.pool1 = nn.MaxPool2d(2, 2)             # 64x64x8 -> 32x32x8
+        self.conv2 = nn.Conv2d(8, 16, 3, padding=1) # 32x32x8 -> 32x32x16
+        self.pool2 = nn.MaxPool2d(2, 2)             # 32x32x16 -> 16x16x16
+
+        self.conv3 = nn.Conv2d(16, 32, 3, padding=1) # 16x16x16 -> 16x16x32
+        self.pool3 = nn.MaxPool2d(2, 2)              # 16x16x32 -> 8x8x32
+
         # Primary capsules layer
-        self.primary_capsules = CapsuleLayer(num_capsules=32, in_channels=16, out_channels=8, num_routes=3136)
+        self.primary_capsules = CapsuleLayer(num_capsules=32, in_channels=32, out_channels=8, num_routes=8*8)
         
-        # Secondary capsules layer
+        # Secondary capsules layer (digit capsules)
         self.secondary_capsules = CapsuleLayer(num_capsules=num_classes, in_channels=8, out_channels=16, num_routes=32)
         
-        # Final layer
+        # Decoder network for reconstruction
+        self.decoder = nn.Sequential(
+            nn.Linear(16 * num_classes, 512),
+            nn.ReLU(),
+            nn.Linear(512, 1024),
+            nn.ReLU(),
+            nn.Linear(1024, 8 * 8 * 32)
+        )
         self.fc = nn.Linear(16 * num_classes, num_classes)
-    
+
     def forward(self, x):
         x = self.pool1(F.relu(self.conv1(x)))
         x = self.pool2(F.relu(self.conv2(x)))
+        x = self.pool3(F.relu(self.conv3(x)))
         
-        # Print shape before reshaping
-        print(f"Shape before reshaping: {x.shape}")
-        
-        # Flatten to match primary capsules input requirements
-        x = x.view(x.size(0), 16, -1)  # [batch_size, in_channels, height*width]
-        
-        # Print shape after reshaping
-        print(f"Shape after reshaping: {x.shape}")
-
-        # Reshape based on the number of primary capsules
-        x = x.view(x.size(0), 32, 16, -1)  # [batch_size, num_capsules, in_channels, height*width]
+        x = x.view(x.size(0), 32, 8*8)  # Flatten for primary capsule input
         
         x = self.primary_capsules(x)
         x = self.secondary_capsules(x)
@@ -76,11 +76,11 @@ class CapsNet(nn.Module):
         # Flatten and pass through final layer
         x = x.view(x.size(0), -1)
         x = self.fc(x)
-        
+
         return x
 
 # Instantiate and test the model
-model = CapsNet(num_classes=15)
-dummy_input = torch.randn(1, 3, 224, 224)
-output = model(dummy_input)
+net = CapsNet(num_classes=15)
+dummy_input = torch.randn(1, 3, 64, 64)  # Batch size of 1, 3 channels, 64x64 image
+output = net(dummy_input)
 print(output.shape)
