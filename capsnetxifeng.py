@@ -1,161 +1,85 @@
 import pandas as pd
 import os
-from keras.utils import to_categorical
-from tensorflow.keras.preprocessing.image import ImageDataGenerator
-from PIL import Image
+from keras.preprocessing.image import load_img, img_to_array
 import numpy as np
-import keras
-from keras import callbacks
-from capsulenet import CapsNet, margin_loss  # Assuming you have the CapsNet architecture in capsulenet.py
-import keras.backend as K
-import matplotlib.pyplot as plt
-from keras.models import Model
-import tensorflow as tf
 
-import tensorflow as tf
-print("Num GPUs Available: ", len(tf.config.experimental.list_physical_devices('GPU')))
+class ExcelImageDataset:
+    def __init__(self, excel_file, image_dirs, transform=None):
+        self.data = pd.read_excel(excel_file)
+        self.image_dirs = image_dirs
+        self.transform = transform
+        self.labels = self.data['clinical_impression_1'].values  # Assuming this is the label column
+        self.image_paths = self.data['midas_path'].values  # Assuming this column has the image paths
+        
+    def __len__(self):
+        return len(self.data)
 
+    def __getitem__(self, idx):
+        image_path = self.image_paths[idx]
+        # Search in multiple directories
+        for root in self.image_dirs:
+            full_path = os.path.join(root, image_path)
+            if os.path.exists(full_path):
+                image = load_img(full_path)
+                break
+        else:
+            raise FileNotFoundError(f"Image {image_path} not found in any of the directories.")
+        
+        image = img_to_array(image)
+        if self.transform:
+            image = self.transform(image)
 
-# Load the Excel file
-excel_path = '/root/stanfordData4321/stanfordData4321/dataRef/release_midas.xlsx'
-df = pd.read_excel(excel_path)
+        label = self.labels[idx]
+        return image, label
 
-# Filter out rows with NaN labels
-df = df.dropna(subset=['clinical_impression_1'])
+    def get_labels(self):
+        return self.labels
+from keras import layers, models
+from keras.utils import to_categorical
 
-# Load image paths and labels
-image_paths = []
-labels = []
+# Assuming your images are resized to 128x128x3 and you have 15 classes
+input_shape = (128, 128, 3)
+n_classes = 15
 
-# List of root directories
-root_dirs = ['/root/stanfordData4321/stanfordData4321/images1', 
-             '/root/stanfordData4321/stanfordData4321/images2', 
-             '/root/stanfordData4321/stanfordData4321/images3', 
-             '/root/stanfordData4321/stanfordData4321/images4']
-augmented_dir = '/root/stanfordData4321/stanfordData4321/augmented_images'
+# Define the model
+inputs = layers.Input(shape=input_shape)
 
-for _, row in df.iterrows():
-    found = False
-    for root_dir in root_dirs:
-        image_path = os.path.join(root_dir, row['midas_file_name'])
-        if os.path.exists(image_path):
-            image_paths.append(image_path)
-            labels.append(row['clinical_impression_1'])
-            found = True
-            break
-    if not found:
-        # Check in the augmented directory
-        image_path = os.path.join(augmented_dir, row['midas_file_name'])
-        if os.path.exists(image_path):
-            image_paths.append(image_path)
-            labels.append(row['clinical_impression_1'])
+# Primary Capsule Layer
+x = layers.Conv2D(filters=256, kernel_size=9, strides=1, padding='valid', activation='relu')(inputs)
+x = PrimaryCap(x, dim_capsule=8, n_channels=32, kernel_size=9, strides=2, padding='valid')
 
-# Convert labels to categorical (after mapping them to integers)
-label_mapping = {
-    '1-benign-melanocytic nevus': 0,
-    '2-benign-seborrheic keratosis': 1,
-    '3-benign-fibrous papule': 2,
-    '4-benign-dermatofibroma': 3,
-    '5-benign-hemangioma': 4,
-    '6-benign-other': 5,
-    '7-malignant-bcc': 6,
-    '8-malignant-scc': 7,
-    '9-malignant-sccis': 8,
-    '10-malignant-ak': 9,
-    '11-malignant-melanoma': 10,
-    '12-malignant-other': 11,
-    '13-other-melanocytic lesion with possible re-excision (severe/spitz nevus, aimp)': 12,
-    '14-other-non-neoplastic/inflammatory/infectious': 13
-}
+# Capsule Layer
+capsule = CapsuleLayer(num_capsule=n_classes, dim_capsule=16, routings=3, name='capsule')(x)
 
-# Replace string labels with integers
-labels = [label_mapping[label] for label in labels]
-labels = to_categorical(labels, num_classes=14)
+# Length Layer for Output
+out_caps = Length(name='out_caps')(capsule)
 
-# Load and preprocess images
-def load_image(img_path, target_size):
-    img = Image.open(img_path).convert('RGB')
-    img = img.resize(target_size)
-    img = np.array(img).astype('float32') / 255.0
-    return img
+# Decoder Network
+y = layers.Input(shape=(n_classes,))
+masked_by_y = Mask()([capsule, y])  # True label is used to mask the output of capsule layer. 
+masked = Mask()(capsule)  # Mask using the capsule with maximal length.
 
-width, height = 128, 128  # Example dimensions, change as needed
-x_data = np.array([load_image(img, (width, height)) for img in image_paths])
-y_data = np.array(labels)
+# Shared Decoder model in training and prediction
+decoder = models.Sequential(name='decoder')
+decoder.add(layers.Dense(512, activation='relu', input_dim=16*n_classes))
+decoder.add(layers.Dense(1024, activation='relu'))
+decoder.add(layers.Dense(np.prod(input_shape), activation='sigmoid'))
+decoder.add(layers.Reshape(target_shape=input_shape, name='out_recon'))
 
-# Custom data loading function
-def load_custom_data():
-    # Use x_data and y_data from the preprocessing step
-    split_idx = int(0.8 * len(x_data))
-    x_train, y_train = x_data[:split_idx], y_data[:split_idx]
-    x_test, y_test = x_data[split_idx:], y_data[split_idx:]
-    return (x_train, y_train), (x_test, y_test)
+# Models for training and evaluation (prediction)
+train_model = models.Model([inputs, y], [out_caps, decoder(masked_by_y)])
+eval_model = models.Model(inputs, [out_caps, decoder(masked)])
 
-(x_train, y_train), (x_test, y_test) = load_custom_data()
-print(len(x_train))
-print(len(x_test))
-
-# Initialize and compile the Capsule Network model
-model, eval_model, manipulate_model = CapsNet(input_shape=(height, width, 3),
-                                              n_class=14,
-                                              routings=3)
-
-# Training parameters
-epochs = 5
-batch_size = 32
-
-model.compile(optimizer=keras.optimizers.Adam(lr=1e-3),
-              loss=[margin_loss, 'mse'],
-              loss_weights=[1., 0.392])
-
-# Define callbacks
-log = callbacks.CSVLogger('log.csv')
-tb = callbacks.TensorBoard(log_dir='./tensorboard-logs', batch_size=batch_size, histogram_freq=1)
-checkpoint = callbacks.ModelCheckpoint('weights-{epoch:02d}.h5', save_best_only=True, save_weights_only=True, verbose=1)
-lr_decay = callbacks.LearningRateScheduler(schedule=lambda epoch: 0.001 * np.power(0.9, epoch))
+# Compile the model
+train_model.compile(optimizer='adam', loss=[margin_loss, 'mse'], loss_weights=[1., 0.392], metrics={'out_caps': 'accuracy'})
+# Convert labels to one-hot encoding
+y_train = to_categorical(train_dataset.get_labels(), n_classes)
+y_val = to_categorical(val_dataset.get_labels(), n_classes)
 
 # Train the model
-model.fit([x_train, y_train], [y_train, x_train],
-          batch_size=batch_size,
-          epochs=epochs,
-          validation_data=[[x_test, y_test], [y_test, x_test]],
-          callbacks=[log, tb, checkpoint, lr_decay])
-
-# After training, apply Grad-CAM to visualize the results
-def get_gradcam_image(model, img, label_index):
-    # Define the model that outputs the activations of the last conv layer
-    last_conv_layer = model.get_layer('conv2d')  # Replace 'conv2d' with the actual last conv layer name
-    heatmap_model = Model([model.inputs], [last_conv_layer.output, model.output])
-    
-    # Get the gradient of the loss with respect to the output feature map
-    with tf.GradientTape() as tape:
-        conv_output, predictions = heatmap_model(np.array([img]))
-        loss = predictions[:, label_index]
-    
-    grads = tape.gradient(loss, conv_output)[0]
-
-    # Compute guided gradients
-    guided_grads = K.sign(grads) * K.relu(grads)
-    
-    # Compute the heatmap
-    conv_output = conv_output[0]
-    guided_grads = guided_grads[0]
-    weights = np.mean(guided_grads, axis=(0, 1))
-    cam = np.dot(conv_output, weights)
-    
-    # Normalize the heatmap
-    cam = np.maximum(cam, 0)
-    cam = cam / cam.max()
-    
-    return cam
-
-# Generate and visualize a Grad-CAM heatmap
-img = x_test[0]  # Replace with the actual image you want to visualize
-label_index = np.argmax(y_test[0])  # Replace with the actual label index for this image
-
-heatmap = get_gradcam_image(model, img, label_index)
-
-# Display the heatmap
-plt.imshow(img)
-plt.imshow(heatmap, cmap='jet', alpha=0.5)
-plt.show()
+train_model.fit(
+    [train_images, y_train], [y_train, train_images],
+    batch_size=32,
+    epochs=50,
+    validation_data=([val_images, y_val], [y_val, val_images])
+)
