@@ -4,6 +4,13 @@ from keras.utils import to_categorical
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
 from PIL import Image
 import numpy as np
+import keras
+from keras import callbacks
+from capsulenet import CapsNet, margin_loss  # Assuming you have the CapsNet architecture in capsulenet.py
+import keras.backend as K
+import matplotlib.pyplot as plt
+from keras.models import Model
+import tensorflow as tf
 
 # Load the Excel file
 excel_path = '/root/stanfordData4321/stanfordData4321/dataRef/release_midas.xlsx'
@@ -39,8 +46,27 @@ for _, row in df.iterrows():
             image_paths.append(image_path)
             labels.append(row['clinical_impression_1'])
 
-# Convert labels to categorical
-labels = to_categorical(labels, num_classes=13)
+# Convert labels to categorical (after mapping them to integers)
+label_mapping = {
+    '1-benign-melanocytic nevus': 0,
+    '2-benign-seborrheic keratosis': 1,
+    '3-benign-fibrous papule': 2,
+    '4-benign-dermatofibroma': 3,
+    '5-benign-hemangioma': 4,
+    '6-benign-other': 5,
+    '7-malignant-bcc': 6,
+    '8-malignant-scc': 7,
+    '9-malignant-sccis': 8,
+    '10-malignant-ak': 9,
+    '11-malignant-melanoma': 10,
+    '12-malignant-other': 11,
+    '13-other-melanocytic lesion with possible re-excision (severe/spitz nevus, aimp)': 12,
+    '14-other-non-neoplastic/inflammatory/infectious': 13
+}
+
+# Replace string labels with integers
+labels = [label_mapping[label] for label in labels]
+labels = to_categorical(labels, num_classes=14)
 
 # Load and preprocess images
 def load_image(img_path, target_size):
@@ -49,6 +75,7 @@ def load_image(img_path, target_size):
     img = np.array(img).astype('float32') / 255.0
     return img
 
+width, height = 128, 128  # Example dimensions, change as needed
 x_data = np.array([load_image(img, (width, height)) for img in image_paths])
 y_data = np.array(labels)
 
@@ -63,18 +90,16 @@ def load_custom_data():
 (x_train, y_train), (x_test, y_test) = load_custom_data()
 print(len(x_train))
 print(len(x_test))
+
+# Initialize and compile the Capsule Network model
 model, eval_model, manipulate_model = CapsNet(input_shape=(height, width, 3),
-                                              n_class=13,
-                                              routings=args.routings)
-import keras
-from keras import callbacks
-from capsulenet import CapsNet, margin_loss  # Assuming you have the CapsNet architecture in capsulenet.py
+                                              n_class=14,
+                                              routings=3)
 
 # Training parameters
 epochs = 5
 batch_size = 32
 
-# Model, eval_model, and manipulate_model are obtained from CapsNet function as shown before
 model.compile(optimizer=keras.optimizers.Adam(lr=1e-3),
               loss=[margin_loss, 'mse'],
               loss_weights=[1., 0.392])
@@ -91,12 +116,8 @@ model.fit([x_train, y_train], [y_train, x_train],
           epochs=epochs,
           validation_data=[[x_test, y_test], [y_test, x_test]],
           callbacks=[log, tb, checkpoint, lr_decay])
-import numpy as np
-import keras.backend as K
-import matplotlib.pyplot as plt
-from keras.models import Model
-from keras.preprocessing.image import img_to_array
 
+# After training, apply Grad-CAM to visualize the results
 def get_gradcam_image(model, img, label_index):
     # Define the model that outputs the activations of the last conv layer
     last_conv_layer = model.get_layer('conv2d')  # Replace 'conv2d' with the actual last conv layer name
@@ -124,7 +145,7 @@ def get_gradcam_image(model, img, label_index):
     
     return cam
 
-# Generate a Grad-CAM heatmap
+# Generate and visualize a Grad-CAM heatmap
 img = x_test[0]  # Replace with the actual image you want to visualize
 label_index = np.argmax(y_test[0])  # Replace with the actual label index for this image
 
@@ -134,4 +155,3 @@ heatmap = get_gradcam_image(model, img, label_index)
 plt.imshow(img)
 plt.imshow(heatmap, cmap='jet', alpha=0.5)
 plt.show()
-
