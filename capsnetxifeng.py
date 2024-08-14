@@ -26,7 +26,7 @@ augmented_dir = '/root/stanfordData4321/stanfordData4321/augmented_images'
 for _, row in df.iterrows():
     found = False
     for root_dir in root_dirs:
-        image_path = os.path.join(root_dir, row['file_name'])
+        image_path = os.path.join(root_dir, row['file_path'])
         if os.path.exists(image_path):
             image_paths.append(image_path)
             labels.append(row['clinical_impression_1'])
@@ -34,7 +34,7 @@ for _, row in df.iterrows():
             break
     if not found:
         # Check in the augmented directory
-        image_path = os.path.join(augmented_dir, row['file_name'])
+        image_path = os.path.join(augmented_dir, row['file_path'])
         if os.path.exists(image_path):
             image_paths.append(image_path)
             labels.append(row['clinical_impression_1'])
