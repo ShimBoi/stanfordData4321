@@ -12,6 +12,10 @@ import matplotlib.pyplot as plt
 from keras.models import Model
 import tensorflow as tf
 
+import tensorflow as tf
+print("Num GPUs Available: ", len(tf.config.experimental.list_physical_devices('GPU')))
+
+
 # Load the Excel file
 excel_path = '/root/stanfordData4321/stanfordData4321/dataRef/release_midas.xlsx'
 df = pd.read_excel(excel_path)
