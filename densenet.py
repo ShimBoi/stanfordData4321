@@ -130,9 +130,9 @@ train_loader = DataLoader(train_dataset, batch_size=4, shuffle=True)
 test_loader = DataLoader(test_dataset, batch_size=4, shuffle=False)
 
 # Load pre-trained DenseNet model and modify the final layer
-from torchvision.models import densenet121, DenseNet121_Weights
+from torchvision.models import densenet201, DenseNet201_Weights
 
-weights = DenseNet121_Weights.DEFAULT
+weights = DenseNet201_Weights.DEFAULT
 net = densenet201(weights=weights)
 num_ftrs = net.classifier.in_features
 net.classifier = nn.Linear(num_ftrs, len(categories))
