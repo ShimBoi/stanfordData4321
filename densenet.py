@@ -226,7 +226,7 @@ with torch.no_grad():
 
 print(f'Accuracy on the test dataset: {100 * correct / total:.2f}%')
 
-def occlusion_sensitivity(model, image, label, patch_size=15, stride=8):
+def occlusion_sensitivity(model, image, label, patch_size=15, stride=8, output_path=None):
     model.eval()
     c, h, w = image.size()
     sensitivity_map = torch.zeros(h, w)
@@ -248,13 +248,17 @@ def occlusion_sensitivity(model, image, label, patch_size=15, stride=8):
             sensitivity_map[j:j+patch_size, i:i+patch_size] = float(prediction != original_prediction)
 
     sensitivity_map = sensitivity_map / sensitivity_map.max()  # Normalize the sensitivity map
+
+    if output_path:
+        plt.imshow(sensitivity_map, cmap='hot', interpolation='nearest')
+        plt.savefig(output_path)
+        print(f"Sensitivity map saved to {output_path}")
     return sensitivity_map
 
 
-# Example usage of occlusion sensitivity
 occlusion_sensitivity(
-    '/root/stanfordData4321/stanfordData4321/images4/s-prd-784541963.jpg',
     net,
+    '/root/stanfordData4321/stanfordData4321/images4/s-prd-784541963.jpg',
     transform,
     patch_size=30,  # Size of the occlusion patch
     stride=15,      # Stride for moving the patch
