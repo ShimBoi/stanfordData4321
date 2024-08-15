@@ -128,7 +128,7 @@ test_loader = DataLoader(test_dataset, batch_size=4, shuffle=False)
 
 # Load pre-trained model and modify the final layer
 weights = models.ResNet18_Weights.DEFAULT
-net = models.resnet18(weights=weights)
+net = models.resnet50(weights=weights)
 num_ftrs = net.fc.in_features
 net.fc = nn.Linear(num_ftrs, len(categories))
 
