@@ -9,9 +9,6 @@ from PIL import Image
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-from pytorch_grad_cam import GradCAM
-from pytorch_grad_cam.utils.image import show_cam_on_image
-import optuna
 from collections import Counter
 import cv2
 
@@ -87,12 +84,6 @@ def count_images_per_label(dataset):
 # Load dataset
 dataset = ExcelImageDataset('./dataRef/release_midas.xlsx', root_dirs, transform)
 
-# Count images before augmentation
-#pre_augmentation_counts = count_images_per_label(dataset)
-#print("Image counts before augmentation:")
-#for label, count in pre_augmentation_counts.items():
-#    print(f"{label}: {count}")
-
 # Function to count images per label in augmented dataset
 class AugmentedImageDataset(Dataset):
     def __init__(self, original_dataset, augmented_dir, transform=None):
@@ -125,12 +116,6 @@ class AugmentedImageDataset(Dataset):
 augmented_dataset = AugmentedImageDataset(dataset, './augmented_images', transform)
 print(f"Total images in augmented dataset: {len(augmented_dataset)}")
 
-# Count images after augmentation
-#post_augmentation_counts = count_images_per_label(augmented_dataset)
-#print("Image counts after augmentation:")
-#for label, count in post_augmentation_counts.items():
-#    print(f"{label}: {count}")
-
 # Split dataset
 train_size = int(0.8 * len(augmented_dataset))
 test_size = len(augmented_dataset) - train_size
@@ -143,7 +128,7 @@ test_loader = DataLoader(test_dataset, batch_size=4, shuffle=False)
 
 # Load pre-trained model and modify the final layer
 weights = models.ResNet18_Weights.DEFAULT
-net = models.resnet50(weights=weights)
+net = models.resnet18(weights=weights)
 num_ftrs = net.fc.in_features
 net.fc = nn.Linear(num_ftrs, len(categories))
 
@@ -236,47 +221,46 @@ with torch.no_grad():
 
 print(f'Accuracy on the test dataset: {100 * correct / total:.2f}%')
 
-def apply_grad_cam(img_path, model, transform, target_layer, output_path=None):
-    model.eval()
-    image = Image.open(img_path).convert("RGB")
-    input_tensor = transform(image).unsqueeze(0).to(device)
+# Occlusion Sensitivity Implementation
+def occlusion_sensitivity(model, image, label, occlusion_size=15, occlusion_stride=8, occlusion_value=0):
+    model.eval()  # Set the model to evaluation mode
+    c, h, w = image.size()  # Get the size of the image
+    heatmap = torch.zeros(h, w)  # Initialize a heatmap
 
-    with torch.no_grad():
-        output = model(input_tensor)
-        pred = output.argmax(dim=1).item()
+    for y in range(0, h, occlusion_stride):
+        for x in range(0, w, occlusion_stride):
+            # Create a copy of the original image
+            occluded_image = image.clone()
+            # Occlude a patch of the image
+            occluded_image[:, y:y + occlusion_size, x:x + occlusion_size] = occlusion_value
 
-    grad_cam = GradCAM(model=model, target_layers=[target_layer])
+            # Forward pass through the model
+            with torch.no_grad():
+                output = model(occluded_image.unsqueeze(0).to(device))
+                # Extract the predicted score for the true label
+                prob = nn.functional.softmax(output, dim=1)[0, label].item()
 
-    grayscale_cam = grad_cam(input_tensor=input_tensor)[0]
-    grayscale_cam = cv2.resize(grayscale_cam, (image.size[0], image.size[1]))
-    cam_image = show_cam_on_image(np.array(image) / 255.0, grayscale_cam, use_rgb=True)
+            # Fill the heatmap with the probability drop
+            heatmap[y:y + occlusion_size, x:x + occlusion_size] = prob
 
-    # Display the image
+    # Normalize the heatmap
+    heatmap = (heatmap - heatmap.min()) / (heatmap.max() - heatmap.min())
+
+    return heatmap
+
+def plot_occlusion_sensitivity(image, heatmap, original_image_path):
+    original_image = Image.open(original_image_path).convert("RGB")
     plt.figure(figsize=(8, 8))
-    plt.imshow(cam_image)
-    plt.title(f"Grad-CAM - Predicted: {categories[pred]}")
-    plt.axis('off')  # Hide axis for better visualization
+    plt.imshow(original_image)
+    plt.imshow(heatmap, cmap='jet', alpha=0.5)  # Overlay the heatmap
+    plt.title("Occlusion Sensitivity")
+    plt.axis('off')
     plt.show()
 
-    # Save the image if output_path is provided
-    if output_path:
-        cam_image_bgr = cv2.cvtColor(cam_image, cv2.COLOR_RGB2BGR)  # Convert RGB to BGR for saving
-        cv2.imwrite(output_path, cam_image_bgr)
-        print(f"Grad-CAM image saved to {output_path}")
+# Visualizing Occlusion Sensitivity on a test image
+test_image_path = './root/stanfordData4321/stanfordData4321/images4/s-prd-784541963.jpg'
+test_image = transform(Image.open(test_image_path).convert("RGB"))
+test_label = 0  # Replace with the actual label index
 
-# Example usage of Grad-CAM
-apply_grad_cam(
-    '/root/stanfordData4321/stanfordData4321/images4/s-prd-784541963.jpg',
-    net,
-    transform,
-    net.layer4[1].conv2,
-    output_path='./grad_cam_image.png'  # Save image to a file
-)
-
-
-
-
-# Save model checkpoint
-checkpoint_path = './model_checkpoint.pth'
-torch.save(net.state_dict(), checkpoint_path)
-print(f"Model checkpoint saved to {checkpoint_path}")
+heatmap = occlusion_sensitivity(net, test_image, test_label)
+plot_occlusion_sensitivity(test_image, heatmap, test_image_path)
