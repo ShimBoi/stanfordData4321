@@ -133,7 +133,7 @@ test_loader = DataLoader(test_dataset, batch_size=4, shuffle=False)
 from torchvision.models import densenet121, DenseNet121_Weights
 
 weights = DenseNet121_Weights.DEFAULT
-net = densenet121(weights=weights)
+net = densenet201(weights=weights)
 num_ftrs = net.classifier.in_features
 net.classifier = nn.Linear(num_ftrs, len(categories))
 
@@ -226,44 +226,44 @@ with torch.no_grad():
 
 print(f'Accuracy on the test dataset: {100 * correct / total:.2f}%')
 
-def apply_grad_cam(img_path, model, transform, target_layer, output_path=None):
+def occlusion_sensitivity(img_path, model, transform, patch_size=30, stride=15, output_path=None):
     model.eval()
     image = Image.open(img_path).convert("RGB")
     input_tensor = transform(image).unsqueeze(0).to(device)
+    original_prediction = model(input_tensor).max(1)[1].item()
+    
+    width, height = image.size
+    sensitivity_map = np.zeros((height, width))
 
-    with torch.no_grad():
-        output = model(input_tensor)
-        pred = output.argmax(dim=1).item()
-
-    grad_cam = GradCAM(model=model, target_layers=[target_layer])
-
-    grayscale_cam = grad_cam(input_tensor=input_tensor)[0]
-    grayscale_cam = cv2.resize(grayscale_cam, (image.size[0], image.size[1]))
-    cam_image = show_cam_on_image(np.array(image) / 255.0, grayscale_cam, use_rgb=True)
-
-    # Display the image
+    for i in range(0, width - patch_size + 1, stride):
+        for j in range(0, height - patch_size + 1, stride):
+            occluded_image = image.copy()
+            occluded_patch = Image.new('RGB', (patch_size, patch_size), color=(0, 0, 0))
+            occluded_image.paste(occluded_patch, (i, j))
+            
+            input_tensor = transform(occluded_image).unsqueeze(0).to(device)
+            output = model(input_tensor)
+            prediction = output.max(1)[1].item()
+            
+            sensitivity_map[j:j+patch_size, i:i+patch_size] = (prediction != original_prediction).astype(float)
+    
+    sensitivity_map = cv2.resize(sensitivity_map, (width, height), interpolation=cv2.INTER_LINEAR)
     plt.figure(figsize=(8, 8))
-    plt.imshow(cam_image)
-    plt.title(f"Grad-CAM - Predicted: {categories[pred]}")
-    plt.axis('off')  # Hide axis for better visualization
+    plt.imshow(sensitivity_map, cmap='hot')
+    plt.title(f"Occlusion Sensitivity - Original Prediction: {categories[original_prediction]}")
+    plt.axis('off')
     plt.show()
-
-    # Save the image if output_path is provided
+    
     if output_path:
-        cam_image_bgr = cv2.cvtColor(cam_image, cv2.COLOR_RGB2BGR)  # Convert RGB to BGR for saving
-        cv2.imwrite(output_path, cam_image_bgr)
-        print(f"Grad-CAM image saved to {output_path}")
+        plt.imsave(output_path, sensitivity_map, cmap='hot')
+        print(f"Occlusion sensitivity map saved to {output_path}")
 
-# Example usage of Grad-CAM
-apply_grad_cam(
+# Example usage of occlusion sensitivity
+occlusion_sensitivity(
     '/root/stanfordData4321/stanfordData4321/images4/s-prd-784541963.jpg',
     net,
     transform,
-    net.features[-1],  # Use the last layer of features for DenseNet
-    output_path='./grad_cam_image.png'  # Save image to a file
+    patch_size=30,  # Size of the occlusion patch
+    stride=15,      # Stride for moving the patch
+    output_path='./occlusion_sensitivity_map.png'  # Save image to a file
 )
-
-# Save model checkpoint
-checkpoint_path = './model_checkpoint.pth'
-torch.save(net.state_dict(), checkpoint_path)
-print(f"Model checkpoint saved to {checkpoint_path}")
