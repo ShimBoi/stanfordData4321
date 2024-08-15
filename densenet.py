@@ -178,7 +178,7 @@ def objective(trial):
     return accuracy
 
 study = optuna.create_study(direction='maximize')
-study.optimize(objective, n_trials=20)
+study.optimize(objective, n_trials=1)
 
 best_params = study.best_params
 print("Best parameters found by Optuna:", best_params)
@@ -191,7 +191,7 @@ optimizer = optim.SGD(net.parameters(), lr=best_lr, momentum=best_momentum)
 # Define loss function and optimizer
 criterion = nn.CrossEntropyLoss()
 
-for epoch in range(30):  # Adjust epoch count as needed
+for epoch in range(3):  # Adjust epoch count as needed
     net.train()
     running_loss = 0.0
     for i, data in enumerate(train_loader, 0):
@@ -226,37 +226,30 @@ with torch.no_grad():
 
 print(f'Accuracy on the test dataset: {100 * correct / total:.2f}%')
 
-def occlusion_sensitivity(img_path, model, transform, patch_size=30, stride=15, output_path=None):
+def occlusion_sensitivity(model, image, label, patch_size=15, stride=8):
     model.eval()
-    image = Image.open(img_path).convert("RGB")
-    input_tensor = transform(image).unsqueeze(0).to(device)
-    original_prediction = model(input_tensor).max(1)[1].item()
-    
-    width, height = image.size
-    sensitivity_map = np.zeros((height, width))
+    c, h, w = image.size()
+    sensitivity_map = torch.zeros(h, w)
 
-    for i in range(0, width - patch_size + 1, stride):
-        for j in range(0, height - patch_size + 1, stride):
-            occluded_image = image.copy()
-            occluded_patch = Image.new('RGB', (patch_size, patch_size), color=(0, 0, 0))
-            occluded_image.paste(occluded_patch, (i, j))
-            
-            input_tensor = transform(occluded_image).unsqueeze(0).to(device)
-            output = model(input_tensor)
-            prediction = output.max(1)[1].item()
-            
-            sensitivity_map[j:j+patch_size, i:i+patch_size] = (prediction != original_prediction).astype(float)
-    
-    sensitivity_map = cv2.resize(sensitivity_map, (width, height), interpolation=cv2.INTER_LINEAR)
-    plt.figure(figsize=(8, 8))
-    plt.imshow(sensitivity_map, cmap='hot')
-    plt.title(f"Occlusion Sensitivity - Original Prediction: {categories[original_prediction]}")
-    plt.axis('off')
-    plt.show()
-    
-    if output_path:
-        plt.imsave(output_path, sensitivity_map, cmap='hot')
-        print(f"Occlusion sensitivity map saved to {output_path}")
+    # Get the model's original prediction
+    original_output = model(image.unsqueeze(0))
+    original_prediction = torch.argmax(original_output, dim=1).item()
+
+    for i in range(0, w, stride):
+        for j in range(0, h, stride):
+            occluded_image = image.clone()
+            occluded_image[:, j:j+patch_size, i:i+patch_size] = 0  # Occlude a patch
+
+            # Get the model's prediction for the occluded image
+            output = model(occluded_image.unsqueeze(0))
+            prediction = torch.argmax(output, dim=1).item()
+
+            # Update the sensitivity map
+            sensitivity_map[j:j+patch_size, i:i+patch_size] = float(prediction != original_prediction)
+
+    sensitivity_map = sensitivity_map / sensitivity_map.max()  # Normalize the sensitivity map
+    return sensitivity_map
+
 
 # Example usage of occlusion sensitivity
 occlusion_sensitivity(
