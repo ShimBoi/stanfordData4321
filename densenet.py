@@ -226,18 +226,18 @@ with torch.no_grad():
 
 print(f'Accuracy on the test dataset: {100 * correct / total:.2f}%')
 
-def occlusion_sensitivity(model, image, label, patch_size=15, stride=8, output_path=None):
+def occlusion_sensitivity(model, image_tensor, label, patch_size=15, stride=8, output_path=None):
     model.eval()
-    c, h, w = image.size()
+    c, h, w = image_tensor.size()
     sensitivity_map = torch.zeros(h, w)
 
     # Get the model's original prediction
-    original_output = model(image.unsqueeze(0))
+    original_output = model(image_tensor.unsqueeze(0))
     original_prediction = torch.argmax(original_output, dim=1).item()
 
     for i in range(0, w, stride):
         for j in range(0, h, stride):
-            occluded_image = image.clone()
+            occluded_image = image_tensor.clone()
             occluded_image[:, j:j+patch_size, i:i+patch_size] = 0  # Occlude a patch
 
             # Get the model's prediction for the occluded image
@@ -255,12 +255,18 @@ def occlusion_sensitivity(model, image, label, patch_size=15, stride=8, output_p
         print(f"Sensitivity map saved to {output_path}")
     return sensitivity_map
 
+# Load and preprocess the image
+image_path = '/root/stanfordData4321/stanfordData4321/images4/s-prd-784541963.jpg'
+image = Image.open(image_path).convert("RGB")
+image_tensor = transform(image).to(device)  # Apply transformations and move to device
 
+# Generate the occlusion sensitivity map
 occlusion_sensitivity(
     net,
-    '/root/stanfordData4321/stanfordData4321/images4/s-prd-784541963.jpg',
-    transform,
+    image_tensor,
+    label=None,  # Replace with the actual label if needed
     patch_size=30,  # Size of the occlusion patch
     stride=15,      # Stride for moving the patch
     output_path='./occlusion_sensitivity_map.png'  # Save image to a file
 )
+
