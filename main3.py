@@ -202,7 +202,7 @@ for epoch in range(7):  # Adjust epoch count as needed
         optimizer.step()
 
         running_loss += loss.item()
-        if i % 200 == 199:
+        if i % 2000 == 1999:
             print(f'[{epoch + 1}, {i + 1}] loss: {running_loss / 100:.3f}')
             running_loss = 0.0
 
