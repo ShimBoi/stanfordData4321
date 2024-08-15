@@ -11,6 +11,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 from collections import Counter
 import cv2
+import optuna
+
 
 # Define categories and image size
 categories = ['7-malignant-bcc', '1-benign-melanocytic nevus', '6-benign-other',
