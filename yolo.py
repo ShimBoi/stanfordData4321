@@ -4,7 +4,10 @@ import pandas as pd
 from sklearn.model_selection import train_test_split
 from ultralytics import YOLO
 
-
+# Define directories
+data_dir = '/content/dataset'
+images_dir = os.path.join(data_dir, 'images')
+labels_dir = os.path.join(data_dir, 'labels')
 
 # Create directories if they don't exist
 os.makedirs(images_dir, exist_ok=True)
@@ -85,7 +88,7 @@ with open(yaml_path, 'w') as f:
 model = YOLO('yolov8n.pt')  # or other YOLOv8 model weights
 
 # Train the model
-model.train(data=yaml_path, epochs=10, batch=4, imgsz=640, project='yolov8_project')
+model.train(data=yaml_path, epochs=5, batch=4, imgsz=640, project='yolov8_project')
 
 # Evaluate the model
 results = model.val()
