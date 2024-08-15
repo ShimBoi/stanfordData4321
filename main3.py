@@ -147,7 +147,7 @@ def objective(trial):
     optimizer = optim.SGD(net.parameters(), lr=lr, momentum=momentum)
     criterion = nn.CrossEntropyLoss()
 
-    for epoch in range(3):  # Fewer epochs for faster optimization
+    for epoch in range(1):  # Fewer epochs for faster optimization
         net.train()
         running_loss = 0.0
         for inputs, labels in train_loader:
@@ -175,7 +175,7 @@ def objective(trial):
     return accuracy
 
 study = optuna.create_study(direction='maximize')
-study.optimize(objective, n_trials=2)
+study.optimize(objective, n_trials=)
 
 best_params = study.best_params
 print("Best parameters found by Optuna:", best_params)
@@ -188,7 +188,7 @@ optimizer = optim.SGD(net.parameters(), lr=best_lr, momentum=best_momentum)
 # Define loss function and optimizer
 criterion = nn.CrossEntropyLoss()
 
-for epoch in range(7):  # Adjust epoch count as needed
+for epoch in range(3):  # Adjust epoch count as needed
     net.train()
     running_loss = 0.0
     for i, data in enumerate(train_loader, 0):
