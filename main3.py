@@ -260,7 +260,7 @@ def plot_occlusion_sensitivity(image, heatmap, original_image_path):
     plt.show()
 
 # Visualizing Occlusion Sensitivity on a test image
-test_image_path = './root/stanfordData4321/stanfordData4321/images4/s-prd-784541963.jpg'
+test_image_path = '/root/stanfordData4321/stanfordData4321/images4/s-prd-784541963.jpg'
 test_image = transform(Image.open(test_image_path).convert("RGB"))
 test_label = 0  # Replace with the actual label index
 
