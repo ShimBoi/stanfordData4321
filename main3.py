@@ -224,59 +224,80 @@ with torch.no_grad():
 print(f'Accuracy on the test dataset: {100 * correct / total:.2f}%')
 
 # Occlusion Sensitivity Implementation
-import os
+import numpy as np
+import torch
+import matplotlib.pyplot as plt
+import matplotlib.cm as cm
+import cv2
+from PIL import Image
 
-def occlusion_sensitivity(model, image, label, occlusion_size=15, occlusion_stride=8, occlusion_value=0, save_dir='./occlusion_results'):
-    model.eval()  # Set the model to evaluation mode
-    c, h, w = image.size()  # Get the size of the image
-    heatmap = torch.zeros(h, w)  # Initialize a heatmap
+def occlusion_sensitivity(model, image_tensor, patch_size=15, stride=5):
+    model.eval()
+    c, h, w = image_tensor.size()
+    sensitivity_map = torch.zeros(h, w)
 
-    for y in range(0, h, occlusion_stride):
-        for x in range(0, w, occlusion_stride):
-            # Create a copy of the original image
-            occluded_image = image.clone()
-            # Occlude a patch of the image
-            occluded_image[:, y:y + occlusion_size, x:x + occlusion_size] = occlusion_value
+    # Get the model's original prediction confidence
+    original_output = model(image_tensor.unsqueeze(0))
+    original_confidence = torch.nn.functional.softmax(original_output, dim=1)
+    original_score = original_confidence.max().item()
 
-            # Forward pass through the model
-            with torch.no_grad():
-                output = model(occluded_image.unsqueeze(0).to(device))
-                # Extract the predicted score for the true label
-                prob = nn.functional.softmax(output, dim=1)[0, label].item()
+    for i in range(0, w, stride):
+        for j in range(0, h, stride):
+            occluded_image = image_tensor.clone()
+            occluded_image[:, j:j+patch_size, i:i+patch_size] = 0  # Occlude a patch
 
-            # Fill the heatmap with the probability drop
-            heatmap[y:y + occlusion_size, x:x + occlusion_size] = prob
+            # Get the model's prediction for the occluded image
+            output = model(occluded_image.unsqueeze(0))
+            confidence = torch.nn.functional.softmax(output, dim=1)
+            score = confidence.max().item()
 
-    # Normalize the heatmap
-    heatmap = (heatmap - heatmap.min()) / (heatmap.max() - heatmap.min())
+            # Update the sensitivity map with the change in confidence
+            sensitivity_map[j:j+patch_size, i:i+patch_size] = original_score - score
 
-    # Convert heatmap to a PIL image
-    heatmap_image = Image.fromarray(np.uint8(heatmap.numpy() * 255)).convert('L')
+    sensitivity_map = sensitivity_map / sensitivity_map.max()  # Normalize the sensitivity map
+    
+    # Apply Gaussian smoothing
+    sensitivity_map = cv2.GaussianBlur(sensitivity_map.numpy(), (11, 11), 0)
+    sensitivity_map = torch.from_numpy(sensitivity_map)
+    
+    return sensitivity_map
 
-    # Create the save directory if it doesn't exist
-    os.makedirs(save_dir, exist_ok=True)
+def visualize_occlusion_sensitivity(image_path, sensitivity_map, output_path=None):
+    image = cv2.imread(image_path)
+    sensitivity_map = sensitivity_map.numpy()
 
-    # Save the heatmap image
-    heatmap_filename = os.path.join(save_dir, f'occlusion_sensitivity_{label}.png')
-    heatmap_image.save(heatmap_filename)
+    # Resize sensitivity map to match the original image size
+    sensitivity_map_resized = cv2.resize(sensitivity_map, (image.shape[1], image.shape[0]))
 
-    return heatmap, heatmap_filename  # Return both the heatmap and the file path
+    # Apply a colormap to the sensitivity map
+    colormap = cm.jet(sensitivity_map_resized)[:, :, :3]  # Use the 'jet' colormap and discard the alpha channel
 
-def plot_occlusion_sensitivity(image, heatmap, original_image_path):
-    original_image = Image.open(original_image_path).convert("RGB")
-    plt.figure(figsize=(8, 8))
-    plt.imshow(original_image)
-    plt.imshow(heatmap, cmap='jet', alpha=0.5)  # Overlay the heatmap
-    plt.title("Occlusion Sensitivity")
+    # Convert to uint8 for blending
+    colormap_uint8 = np.uint8(255 * colormap)
+
+    # Blend the original image with the colormap
+    overlay = cv2.addWeighted(image, 0.6, colormap_uint8, 0.4, 0)
+
+    if output_path:
+        cv2.imwrite(output_path, overlay)
+        print(f"Overlay saved to {output_path}")
+    
+    plt.imshow(overlay)
     plt.axis('off')
     plt.show()
 
-# Visualizing Occlusion Sensitivity on a test image
-test_image_path = '/root/stanfordData4321/stanfordData4321/images4/s-prd-784541963.jpg'
-test_image = transform(Image.open(test_image_path).convert("RGB"))
-test_label = 0  # Replace with the actual label index
+# Load and preprocess the image
+image_path = '/root/stanfordData4321/stanfordData4321/images4/s-prd-784541963.jpg'
+image = Image.open(image_path).convert("RGB")
+image_tensor = transform(image).to(device)  # Apply transformations and move to device
 
-heatmap, heatmap_path = occlusion_sensitivity(net, test_image, test_label)
-plot_occlusion_sensitivity(test_image, heatmap, test_image_path)
+# Generate the occlusion sensitivity map
+sensitivity_map = occlusion_sensitivity(
+    net,
+    image_tensor,
+    patch_size=15,  # Smaller patch size for finer granularity
+    stride=5       # Smaller stride for smoother transitions
+)
 
-print(f"Occlusion sensitivity heatmap saved at: {heatmap_path}")
+# Visualize the occlusion sensitivity map overlaid on the original image
+visualize_occlusion_sensitivity(image_path, sensitivity_map, output_path='./occlusion_sensitivity_overlay.png')
