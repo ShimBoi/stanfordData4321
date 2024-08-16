@@ -188,7 +188,7 @@ optimizer = optim.SGD(net.parameters(), lr=best_lr, momentum=best_momentum)
 # Define loss function and optimizer
 criterion = nn.CrossEntropyLoss()
 
-for epoch in range(5):  # Adjust epoch count as needed
+for epoch in range(3):  # Adjust epoch count as needed
     net.train()
     running_loss = 0.0
     for i, data in enumerate(train_loader, 0):
@@ -254,11 +254,11 @@ def occlusion_sensitivity(model, image_tensor, patch_size=15, stride=5):
             sensitivity_map[j:j+patch_size, i:i+patch_size] = original_score - score
 
     sensitivity_map = sensitivity_map / sensitivity_map.max()  # Normalize the sensitivity map
-    
+
     # Apply Gaussian smoothing
     sensitivity_map = cv2.GaussianBlur(sensitivity_map.numpy(), (11, 11), 0)
     sensitivity_map = torch.from_numpy(sensitivity_map)
-    
+
     return sensitivity_map
 
 def visualize_occlusion_sensitivity(image_path, sensitivity_map, output_path=None):
@@ -277,20 +277,12 @@ def visualize_occlusion_sensitivity(image_path, sensitivity_map, output_path=Non
     # Blend the original image with the colormap
     overlay = cv2.addWeighted(image, 0.6, colormap_uint8, 0.4, 0)
 
-    # Create a figure and axis
-    fig, ax = plt.subplots(figsize=(10, 8))
-    ax.imshow(overlay)
-    ax.axis('off')
-    
-    # Add a color bar
-    sm = plt.cm.ScalarMappable(cmap=cm.jet, norm=plt.Normalize(vmin=sensitivity_map.min(), vmax=sensitivity_map.max()))
-    sm.set_array([])
-    fig.colorbar(sm, ax=ax, fraction=0.046, pad=0.04, label='Occlusion Sensitivity Score')
-
     if output_path:
         cv2.imwrite(output_path, overlay)
         print(f"Overlay saved to {output_path}")
-    
+
+    plt.imshow(overlay)
+    plt.axis('off')
     plt.show()
 
 # Load and preprocess the image
