@@ -191,7 +191,7 @@ optimizer = optim.SGD(net.parameters(), lr=best_lr, momentum=best_momentum)
 # Define loss function and optimizer
 criterion = nn.CrossEntropyLoss()
 
-for epoch in range(10):  # Adjust epoch count as needed
+for epoch in range(3):  # Adjust epoch count as needed
     net.train()
     running_loss = 0.0
     for i, data in enumerate(train_loader, 0):
@@ -226,7 +226,14 @@ with torch.no_grad():
 
 print(f'Accuracy on the test dataset: {100 * correct / total:.2f}%')
 
-def occlusion_sensitivity(model, image_tensor, label, patch_size=15, stride=8, output_path=None):
+import numpy as np
+import torch
+import matplotlib.pyplot as plt
+import matplotlib.cm as cm
+import cv2
+from PIL import Image
+
+def occlusion_sensitivity(model, image_tensor, label, patch_size=15, stride=8):
     model.eval()
     c, h, w = image_tensor.size()
     sensitivity_map = torch.zeros(h, w)
@@ -248,12 +255,31 @@ def occlusion_sensitivity(model, image_tensor, label, patch_size=15, stride=8, o
             sensitivity_map[j:j+patch_size, i:i+patch_size] = float(prediction != original_prediction)
 
     sensitivity_map = sensitivity_map / sensitivity_map.max()  # Normalize the sensitivity map
+    return sensitivity_map
+
+def visualize_occlusion_sensitivity(image_path, sensitivity_map, output_path=None):
+    image = cv2.imread(image_path)
+    sensitivity_map = sensitivity_map.numpy()
+
+    # Resize sensitivity map to match the original image size
+    sensitivity_map_resized = cv2.resize(sensitivity_map, (image.shape[1], image.shape[0]))
+
+    # Apply a colormap to the sensitivity map
+    colormap = cm.jet(sensitivity_map_resized)[:, :, :3]  # Use the 'jet' colormap and discard the alpha channel
+
+    # Convert to uint8 for blending
+    colormap_uint8 = np.uint8(255 * colormap)
+
+    # Blend the original image with the colormap
+    overlay = cv2.addWeighted(image, 0.6, colormap_uint8, 0.4, 0)
 
     if output_path:
-        plt.imshow(sensitivity_map, cmap='hot', interpolation='nearest')
-        plt.savefig(output_path)
-        print(f"Sensitivity map saved to {output_path}")
-    return sensitivity_map
+        cv2.imwrite(output_path, overlay)
+        print(f"Overlay saved to {output_path}")
+    
+    plt.imshow(overlay)
+    plt.axis('off')
+    plt.show()
 
 # Load and preprocess the image
 image_path = '/root/stanfordData4321/stanfordData4321/images4/s-prd-784541963.jpg'
@@ -261,12 +287,13 @@ image = Image.open(image_path).convert("RGB")
 image_tensor = transform(image).to(device)  # Apply transformations and move to device
 
 # Generate the occlusion sensitivity map
-occlusion_sensitivity(
+sensitivity_map = occlusion_sensitivity(
     net,
     image_tensor,
     label=None,  # Replace with the actual label if needed
     patch_size=30,  # Size of the occlusion patch
-    stride=15,      # Stride for moving the patch
-    output_path='./occlusion_sensitivity_map.png'  # Save image to a file
+    stride=15      # Stride for moving the patch
 )
 
+# Visualize the occlusion sensitivity map overlaid on the original image
+visualize_occlusion_sensitivity(image_path, sensitivity_map, output_path='./occlusion_sensitivity_overlay.png')
