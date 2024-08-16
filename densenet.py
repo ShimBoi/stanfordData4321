@@ -279,12 +279,20 @@ def visualize_occlusion_sensitivity(image_path, sensitivity_map, output_path=Non
     # Blend the original image with the colormap
     overlay = cv2.addWeighted(image, 0.6, colormap_uint8, 0.4, 0)
 
+    # Plot the overlay with a color bar
+    plt.figure(figsize=(10, 8))
+    plt.imshow(overlay)
+    plt.axis('off')
+    
+    # Add a color bar
+    sm = plt.cm.ScalarMappable(cmap=cm.jet, norm=plt.Normalize(vmin=sensitivity_map.min(), vmax=sensitivity_map.max()))
+    sm.set_array([])
+    plt.colorbar(sm, fraction=0.046, pad=0.04, label='Occlusion Sensitivity Score')
+
     if output_path:
         cv2.imwrite(output_path, overlay)
         print(f"Overlay saved to {output_path}")
     
-    plt.imshow(overlay)
-    plt.axis('off')
     plt.show()
 
 # Load and preprocess the image
