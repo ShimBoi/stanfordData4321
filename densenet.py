@@ -177,16 +177,16 @@ def objective(trial):
     accuracy = correct / total
     return accuracy
 
-study = optuna.create_study(direction='maximize')
-study.optimize(objective, n_trials=1)
+#study = optuna.create_study(direction='maximize')
+#study.optimize(objective, n_trials=1)
 
-best_params = study.best_params
-print("Best parameters found by Optuna:", best_params)
+#best_params = study.best_params
+#print("Best parameters found by Optuna:", best_params)
 
 # Training with the best parameters
-best_lr = best_params['lr']
-best_momentum = best_params['momentum']
-optimizer = optim.SGD(net.parameters(), lr=best_lr, momentum=best_momentum)
+#best_lr = best_params['lr']
+#best_momentum = best_params['momentum']
+optimizer = optim.SGD(net.parameters(), lr=0.1, momentum=0.9)
 
 # Define loss function and optimizer
 criterion = nn.CrossEntropyLoss()
@@ -225,7 +225,6 @@ with torch.no_grad():
         correct += (predicted == labels).sum().item()
 
 print(f'Accuracy on the test dataset: {100 * correct / total:.2f}%')
-
 import numpy as np
 import torch
 import matplotlib.pyplot as plt
@@ -233,14 +232,7 @@ import matplotlib.cm as cm
 import cv2
 from PIL import Image
 
-import numpy as np
-import torch
-import matplotlib.pyplot as plt
-import matplotlib.cm as cm
-import cv2
-from PIL import Image
-
-def occlusion_sensitivity(model, image_tensor, patch_size=15, stride=8):
+def occlusion_sensitivity(model, image_tensor, patch_size=15, stride=5):
     model.eval()
     c, h, w = image_tensor.size()
     sensitivity_map = torch.zeros(h, w)
@@ -264,6 +256,11 @@ def occlusion_sensitivity(model, image_tensor, patch_size=15, stride=8):
             sensitivity_map[j:j+patch_size, i:i+patch_size] = original_score - score
 
     sensitivity_map = sensitivity_map / sensitivity_map.max()  # Normalize the sensitivity map
+    
+    # Apply Gaussian smoothing
+    sensitivity_map = cv2.GaussianBlur(sensitivity_map.numpy(), (11, 11), 0)
+    sensitivity_map = torch.from_numpy(sensitivity_map)
+    
     return sensitivity_map
 
 def visualize_occlusion_sensitivity(image_path, sensitivity_map, output_path=None):
@@ -299,8 +296,8 @@ image_tensor = transform(image).to(device)  # Apply transformations and move to 
 sensitivity_map = occlusion_sensitivity(
     net,
     image_tensor,
-    patch_size=30,  # Size of the occlusion patch
-    stride=15      # Stride for moving the patch
+    patch_size=15,  # Smaller patch size for finer granularity
+    stride=5       # Smaller stride for smoother transitions
 )
 
 # Visualize the occlusion sensitivity map overlaid on the original image
