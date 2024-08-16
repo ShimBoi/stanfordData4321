@@ -224,7 +224,9 @@ with torch.no_grad():
 print(f'Accuracy on the test dataset: {100 * correct / total:.2f}%')
 
 # Occlusion Sensitivity Implementation
-def occlusion_sensitivity(model, image, label, occlusion_size=15, occlusion_stride=8, occlusion_value=0):
+import os
+
+def occlusion_sensitivity(model, image, label, occlusion_size=15, occlusion_stride=8, occlusion_value=0, save_dir='./occlusion_results'):
     model.eval()  # Set the model to evaluation mode
     c, h, w = image.size()  # Get the size of the image
     heatmap = torch.zeros(h, w)  # Initialize a heatmap
@@ -248,7 +250,17 @@ def occlusion_sensitivity(model, image, label, occlusion_size=15, occlusion_stri
     # Normalize the heatmap
     heatmap = (heatmap - heatmap.min()) / (heatmap.max() - heatmap.min())
 
-    return heatmap
+    # Convert heatmap to a PIL image
+    heatmap_image = Image.fromarray(np.uint8(heatmap.numpy() * 255)).convert('L')
+
+    # Create the save directory if it doesn't exist
+    os.makedirs(save_dir, exist_ok=True)
+
+    # Save the heatmap image
+    heatmap_filename = os.path.join(save_dir, f'occlusion_sensitivity_{label}.png')
+    heatmap_image.save(heatmap_filename)
+
+    return heatmap, heatmap_filename  # Return both the heatmap and the file path
 
 def plot_occlusion_sensitivity(image, heatmap, original_image_path):
     original_image = Image.open(original_image_path).convert("RGB")
@@ -264,5 +276,7 @@ test_image_path = '/root/stanfordData4321/stanfordData4321/images4/s-prd-7845419
 test_image = transform(Image.open(test_image_path).convert("RGB"))
 test_label = 0  # Replace with the actual label index
 
-heatmap = occlusion_sensitivity(net, test_image, test_label)
+heatmap, heatmap_path = occlusion_sensitivity(net, test_image, test_label)
 plot_occlusion_sensitivity(test_image, heatmap, test_image_path)
+
+print(f"Occlusion sensitivity heatmap saved at: {heatmap_path}")
