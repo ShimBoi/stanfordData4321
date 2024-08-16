@@ -233,14 +233,22 @@ import matplotlib.cm as cm
 import cv2
 from PIL import Image
 
-def occlusion_sensitivity(model, image_tensor, label, patch_size=15, stride=8):
+import numpy as np
+import torch
+import matplotlib.pyplot as plt
+import matplotlib.cm as cm
+import cv2
+from PIL import Image
+
+def occlusion_sensitivity(model, image_tensor, patch_size=15, stride=8):
     model.eval()
     c, h, w = image_tensor.size()
     sensitivity_map = torch.zeros(h, w)
 
-    # Get the model's original prediction
+    # Get the model's original prediction confidence
     original_output = model(image_tensor.unsqueeze(0))
-    original_prediction = torch.argmax(original_output, dim=1).item()
+    original_confidence = torch.nn.functional.softmax(original_output, dim=1)
+    original_score = original_confidence.max().item()
 
     for i in range(0, w, stride):
         for j in range(0, h, stride):
@@ -249,10 +257,11 @@ def occlusion_sensitivity(model, image_tensor, label, patch_size=15, stride=8):
 
             # Get the model's prediction for the occluded image
             output = model(occluded_image.unsqueeze(0))
-            prediction = torch.argmax(output, dim=1).item()
+            confidence = torch.nn.functional.softmax(output, dim=1)
+            score = confidence.max().item()
 
-            # Update the sensitivity map
-            sensitivity_map[j:j+patch_size, i:i+patch_size] = float(prediction != original_prediction)
+            # Update the sensitivity map with the change in confidence
+            sensitivity_map[j:j+patch_size, i:i+patch_size] = original_score - score
 
     sensitivity_map = sensitivity_map / sensitivity_map.max()  # Normalize the sensitivity map
     return sensitivity_map
@@ -290,7 +299,6 @@ image_tensor = transform(image).to(device)  # Apply transformations and move to 
 sensitivity_map = occlusion_sensitivity(
     net,
     image_tensor,
-    label=None,  # Replace with the actual label if needed
     patch_size=30,  # Size of the occlusion patch
     stride=15      # Stride for moving the patch
 )
