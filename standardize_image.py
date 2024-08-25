@@ -3,7 +3,7 @@ import cv2
 import numpy as np
 from tqdm import tqdm
 
-input_folders = ['images3']  
+input_folders = ['images4']  
 output_base_folder = 'standardized_images'
 os.makedirs(output_base_folder, exist_ok=True)
 
