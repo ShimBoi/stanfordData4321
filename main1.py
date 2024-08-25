@@ -47,7 +47,6 @@ transform = transforms.Compose([
 
 # Define the augmentation pipeline
 augmentation_transforms = transforms.Compose([
-    transforms.RandomResizedCrop(img_size),
     transforms.RandomHorizontalFlip(),
     transforms.RandomVerticalFlip(),
     transforms.RandomRotation(10),
