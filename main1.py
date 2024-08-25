@@ -166,7 +166,7 @@ def save_augmented_images_with_exact_cap(dataset, output_dir, target_count=1500)
                 os.remove(os.path.join(label_dir, img))
 
 # Create dataset and save augmented images
-output_dir = './augmented_images'
+output_dir = './augmented_images1'
 save_augmented_images_with_exact_cap(dataset, output_dir, target_count=1500)
 
 # Function to count images per label in augmented dataset
