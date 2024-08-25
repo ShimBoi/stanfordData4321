@@ -102,10 +102,10 @@ class ExcelImageDataset(Dataset):
 
 # Define the root directories
 root_dirs = [
-    '/root/stanfordData4321/stanfordData4321/images2',
-    '/root/stanfordData4321/stanfordData4321/images1',
-    '/root/stanfordData4321/stanfordData4321/images3',
-    '/root/stanfordData4321/stanfordData4321/images4'
+    '/root/stanfordData4321/stanfordData4321/standardized_images/images1',
+    '/root/stanfordData4321/stanfordData4321/standardized_images/images2',
+    '/root/stanfordData4321/stanfordData4321/standardized_images/images3',
+    '/root/stanfordData4321/stanfordData4321/standardized_images/images4'
 ]
 
 # Function to count images per label
