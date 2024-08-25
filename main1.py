@@ -47,9 +47,7 @@ transform = transforms.Compose([
 
 # Define the augmentation pipeline
 augmentation_transforms = transforms.Compose([
-    transforms.RandomHorizontalFlip(),
-    transforms.RandomVerticalFlip(),
-    transforms.RandomRotation(10),
+    transforms.RandomRotation(90),
 ])
 
 def imshow(img):
