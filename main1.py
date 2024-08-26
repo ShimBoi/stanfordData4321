@@ -45,31 +45,40 @@ transform = transforms.Compose([
     transforms.Normalize((0.5,), (0.5,))
 ])
 
+import torch
 from PIL import Image
 import torchvision.transforms as transforms
+import os
 
-
-# Define the transformation pipeline
+# Define the augmentation and processing pipeline
 augmentation_transforms = transforms.Compose([
     transforms.Pad(20, fill=(255, 255, 255), padding_mode='constant'),  # Pad with white background
     transforms.RandomRotation(90, expand=True),  # Rotate the image with expansion
-    transforms.Resize((700, 700), antialias=True),  # Resize back to 700x700
+    transforms.Resize((700, 700), antialias=True),  # Resize back to 700x700 with antialiasing
+])
+
+# Convert image to tensor and normalize (this should be done separately)
+to_tensor_and_normalize = transforms.Compose([
     transforms.ToTensor(),  # Convert to tensor
     transforms.Normalize((0.5,), (0.5,))  # Normalize
 ])
 
 def save_augmented_images_with_exact_cap(dataset, output_dir, target_count=1500):
-    for img, label in dataset:
-        # Convert tensor image back to PIL image if needed
+    for idx, (img, label) in enumerate(dataset):
+        # Convert tensor to PIL image if it's already a tensor
         if isinstance(img, torch.Tensor):
             img = transforms.ToPILImage()(img)
         
-        augmented_img = augmentation_transforms(img)  # Apply the transformation pipeline
+        # Apply the augmentation pipeline (keep the image as PIL)
+        augmented_img = augmentation_transforms(img)
+        
+        # Convert the augmented image to a tensor and normalize it
+        augmented_img = to_tensor_and_normalize(augmented_img)
         
         # Save or further process the augmented image
-        # Example: Save the augmented image to disk
         save_path = os.path.join(output_dir, f"augmented_{label}_{idx}.png")
         transforms.ToPILImage()(augmented_img).save(save_path)
+
 
 def imshow(img):
     img = img / 2 + 0.5
