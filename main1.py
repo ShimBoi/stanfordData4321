@@ -52,9 +52,9 @@ import os
 
 # Define the augmentation and processing pipeline
 augmentation_transforms = transforms.Compose([
-    transforms.Pad(20, fill=(255, 255, 255), padding_mode='constant'),  # Pad with white background
     transforms.RandomRotation(90, expand=True),  # Rotate the image with expansion
-    transforms.Resize((700, 700), antialias=True),  # Resize back to 700x700 with antialiasing
+    transforms.CenterCrop((700, 700)),           # Crop to center at 700x700 after rotation
+    transforms.Resize((700, 700)),               # Resize to ensure consistency
 ])
 
 # Convert image to tensor and normalize (this should be done separately)
@@ -78,7 +78,6 @@ def save_augmented_images_with_exact_cap(dataset, output_dir, target_count=1500)
         # Save or further process the augmented image
         save_path = os.path.join(output_dir, f"augmented_{label}_{idx}.png")
         transforms.ToPILImage()(augmented_img).save(save_path)
-
 
 def imshow(img):
     img = img / 2 + 0.5
