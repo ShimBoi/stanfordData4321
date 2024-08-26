@@ -48,7 +48,8 @@ transform = transforms.Compose([
 from PIL import Image
 import torchvision.transforms as transforms
 
-# Compose the transformation pipeline with padding, rotation, and resizing
+
+# Define the transformation pipeline
 augmentation_transforms = transforms.Compose([
     transforms.Pad(20, fill=(255, 255, 255), padding_mode='constant'),  # Pad with white background
     transforms.RandomRotation(90, expand=True),  # Rotate the image with expansion
@@ -59,9 +60,16 @@ augmentation_transforms = transforms.Compose([
 
 def save_augmented_images_with_exact_cap(dataset, output_dir, target_count=1500):
     for img, label in dataset:
-        augmented_img = Image.fromarray(img.numpy().astype('uint8')).convert('RGB') 
-
-
+        # Convert tensor image back to PIL image if needed
+        if isinstance(img, torch.Tensor):
+            img = transforms.ToPILImage()(img)
+        
+        augmented_img = augmentation_transforms(img)  # Apply the transformation pipeline
+        
+        # Save or further process the augmented image
+        # Example: Save the augmented image to disk
+        save_path = os.path.join(output_dir, f"augmented_{label}_{idx}.png")
+        transforms.ToPILImage()(augmented_img).save(save_path)
 
 def imshow(img):
     img = img / 2 + 0.5
