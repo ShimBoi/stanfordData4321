@@ -45,15 +45,22 @@ transform = transforms.Compose([
     transforms.Normalize((0.5,), (0.5,))
 ])
 
-# Define the augmentation pipeline
+from PIL import Image
+import torchvision.transforms as transforms
+
 # Compose the transformation pipeline with padding, rotation, and resizing
 augmentation_transforms = transforms.Compose([
     transforms.Pad(20, fill=(255, 255, 255), padding_mode='constant'),  # Pad with white background
     transforms.RandomRotation(90, expand=True),  # Rotate the image with expansion
-    transforms.Resize((700, 700)),  # Resize back to 700x700
-    transforms.ToTensor(),
-    transforms.Normalize((0.5,), (0.5,))
+    transforms.Resize((700, 700), antialias=True),  # Resize back to 700x700
+    transforms.ToTensor(),  # Convert to tensor
+    transforms.Normalize((0.5,), (0.5,))  # Normalize
 ])
+
+def save_augmented_images_with_exact_cap(dataset, output_dir, target_count=1500):
+    for img, label in dataset:
+        augmented_img = Image.fromarray(img.numpy().astype('uint8')).convert('RGB') 
+
 
 
 def imshow(img):
