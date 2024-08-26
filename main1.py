@@ -46,9 +46,15 @@ transform = transforms.Compose([
 ])
 
 # Define the augmentation pipeline
+# Compose the transformation pipeline with padding, rotation, and resizing
 augmentation_transforms = transforms.Compose([
-    transforms.RandomRotation(90),
+    transforms.Pad(20, fill=(255, 255, 255), padding_mode='constant'),  # Pad with white background
+    transforms.RandomRotation(90, expand=True),  # Rotate the image with expansion
+    transforms.Resize((700, 700)),  # Resize back to 700x700
+    transforms.ToTensor(),
+    transforms.Normalize((0.5,), (0.5,))
 ])
+
 
 def imshow(img):
     img = img / 2 + 0.5
